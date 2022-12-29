@@ -2,7 +2,7 @@ import discord
 import os
 from dotenv import load_dotenv
 
-bot = discord.Bot(intents=discord.Intents.all(), help_command=None, debug_guilds=[ServerID])
+bot = discord.Bot(intents=discord.Intents.all(), help_command=None, debug_guilds=[ServerID]) # discord.Bot erlaubt nur Slash Commands
 
 @bot.event
 async def on_ready():
