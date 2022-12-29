@@ -1,1 +1,2 @@
-# DiscordBot Projekt ist ein Open Source Projekt wo ihr die Codes einfach nehmen könnt.
+# Discord Bot Open Source Projekt
+Hier kommt ab und zu Codes also seit gespannt wenn ihr mehr haben wollt joint hier https://discord.gg/paradies
