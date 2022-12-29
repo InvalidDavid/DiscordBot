@@ -2,6 +2,9 @@ import discord
 from discord.commands import slash_command, option
 from discord.ext import commands
 
+
+# WICHTIG! Diese Funktion ist längst überflüssig da man schon so die Activity starten kann!
+
 class activity(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
