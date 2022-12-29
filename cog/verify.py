@@ -3,7 +3,6 @@ from discord.ext import commands
 from discord.commands import slash_command
 import random
 
-guild = 866647091836223519 # Eure Server ID hier einsetzen
 rolle = 1057946388975075338 # Eure Rolle ID hier einsetzen
 
 class VerifyModal(discord.ui.Modal):
