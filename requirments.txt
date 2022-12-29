@@ -1,0 +1,5 @@
+py-cord
+aiohttp
+random
+os
+python-dotenv
