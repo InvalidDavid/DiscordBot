@@ -1,9 +1,8 @@
 import discord
 import os
+from dotenv import load_dotenv
 
-
-bot = discord.Bot(intents=discord.Intents.all(), help_command=None, debug_guilds=None) # discord.Bot erlaubt nur Slash Commands
-TOKEN = "" # Hier euer Bot Token einfügen 
+bot = discord.Bot(intents=discord.Intents.all(), help_command=None, debug_guilds=[ServerID])
 
 @bot.event
 async def on_ready():
@@ -15,5 +14,6 @@ if __name__ == "__main__":
     for filename in os.listdir("cog"):
         if filename.endswith(".py"):
             bot.load_extension(f"cog.{filename[:-3]}")
-
-    bot.run(TOKEN)
+            
+    load_dotenv()
+    bot.run(os.getenv("TOKEN"))
