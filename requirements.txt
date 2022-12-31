@@ -3,3 +3,4 @@ aiohttp
 random
 os
 python-dotenv
+sqlite3
