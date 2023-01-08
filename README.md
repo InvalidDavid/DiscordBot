@@ -11,5 +11,6 @@ Das ist eine Python-Bibliothek, die auf [discord.py](https://github.com/Rapptz/d
 2. Erstelle eine `.env` Datei, in die du den Bot Token einfügst
 ```
 TOKEN = 123456789abcde
+API_KEY = #https://youtu.be/Bb2hrOIhi40 Tutorial wie man den API Key holt
 ```
 3. Installiere die Python Packages aus der `requirements.txt` Datei
