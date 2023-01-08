@@ -16,4 +16,5 @@ if __name__ == "__main__":
             bot.load_extension(f"cog.{filename[:-3]}")
             
     load_dotenv()
+    print('Support: https://discord.gg/paradies\nCredits: https://youtu.be/Bb2hrOIhi40')
     bot.run(os.getenv("TOKEN"))
