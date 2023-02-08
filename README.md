@@ -14,3 +14,5 @@ TOKEN = 123456789abcde
 API_KEY = #https://youtu.be/Bb2hrOIhi40 Tutorial wie man den API Key holt
 ```
 3. Installiere die Python Packages aus der `requirements.txt` Datei
+
+Lisenz wird bald hinzugefügt...
