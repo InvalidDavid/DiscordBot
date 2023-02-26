@@ -223,8 +223,6 @@ class Verify(commands.Cog):
         view = discord.ui.View(timeout=None)
         view.add_item(VerifyButton(self.bot))
         self.bot.add_view(view)
-        c.execute('''CREATE TABLE IF NOT EXISTS verify (guild_id INTEGER, role_id INTEGER)''')
-        db.commit()
         print('Verify System, bereitgestellt von discord.gg/paradies')
 
 
