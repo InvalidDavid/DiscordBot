@@ -44,7 +44,7 @@ class GPT(commands.Cog):
     #         # await message.channel.send(response)
 
 
-    @slash_command(description="Chatte mit GPT")
+    @slash_command(description="Unterhalte dih mit GPT")
     @commands.cooldown(5,1, commands.BucketType.user)
     @option(name="redensart", description="Wähle die Redensart der KI", required=False, choices=["Kind", "Alter Mann", "Anime Girl", "Erwachsener", "Jugendlicher"], default="Katze")
     async def gpt(self, ctx, text: Option(str), redensart):
