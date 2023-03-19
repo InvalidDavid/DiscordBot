@@ -3,10 +3,10 @@ from discord.ext import commands
 from discord.commands import slash_command, Option, option
 
 import openai
-openai.api_key = "API KEY von CHAT GPT EINFÜGEN"
+openai.api_key = "API KEY"
 
 
-# def openai_response(message: str) -> str:      # ALTER CHATGPT CODE
+# def openai_response(message: str) -> str:
 #     try:
 #         response = openai.Completion.create(
 #             model="text-davinci-003",
@@ -26,6 +26,7 @@ class GPT(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    #
     # @commands.Cog.listener()
     # async def on_message(self, message):
     #     if message.author.bot:
@@ -44,13 +45,13 @@ class GPT(commands.Cog):
     #         # await message.channel.send(response)
 
 
-    @slash_command(description="Unterhalte dih mit GPT")
+    @slash_command(description="Chatte mit GPT")
     @commands.cooldown(5,1, commands.BucketType.user)
-    @option(name="redensart", description="Wähle die Redensart der KI", required=False, choices=["Kind", "Alter Mann", "Anime Girl", "Erwachsener", "Jugendlicher"], default="Katze")
-    async def gpt(self, ctx, text: Option(str), redensart):
+    @option(name="perönlichkeit", description="Wähle die Redensart der KI", required=False, choices=["Baby", "Alter Mann", "Anime Girl", "Erwachsener", "Jugendlicher"], default="Katze")
+    async def gpt(self, ctx, text: Option(str, description="Deine Nachricht"), perönlichkeit):
         try:
             await ctx.defer()
-            if redensart == "Jugendlicher":
+            if perönlichkeit == "Jugendlicher":
                 result = openai.ChatCompletion.create(
                     model="gpt-3.5-turbo",
 
@@ -64,21 +65,21 @@ class GPT(commands.Cog):
                     max_tokens=250
                 )
 
-            elif redensart == "Kind":
+            elif perönlichkeit == "Baby":
                 result = openai.ChatCompletion.create(
                     model="gpt-3.5-turbo",
 
                     messages=[
                         {
                             "role": "system",
-                            "content": "Du bist ein kleines Kind das seine Sätze auf das niedrigsten Niveu ist und süß redet."
+                            "content": "Du bist ein 1 Jähriges Kind das seine Sätze auf das niedrigsten Niveu ist. Du redest immer miz Baby Wörter"
                         },
                         {"role": "user", "content": text}
                     ],
                     max_tokens=250
                 )
 
-            elif redensart == "Alter Mann":
+            elif perönlichkeit == "Alter Mann":
                 result = openai.ChatCompletion.create(
                     model="gpt-3.5-turbo",
 
@@ -92,7 +93,7 @@ class GPT(commands.Cog):
                     max_tokens=250
                 )
 
-            elif redensart == "Anime Girl":
+            elif perönlichkeit == "Anime Girl":
                 result = openai.ChatCompletion.create(
                     model="gpt-3.5-turbo",
 
@@ -105,7 +106,7 @@ class GPT(commands.Cog):
                     ],
                 )
 
-            elif redensart == "Erwachsener":
+            elif perönlichkeit == "Erwachsener":
                 result = openai.ChatCompletion.create(
                     model="gpt-3.5-turbo",
 
@@ -136,7 +137,7 @@ class GPT(commands.Cog):
                 title=text,
                 description=result["choices"][0]["message"]["content"]
             )
-            embed.set_footer(text=f"Redensart: {redensart}")
+            embed.set_footer(text=f"Perönlichkeit: {perönlichkeit}")
             await ctx.respond(embed=embed)
         except:
             embed = discord.Embed(
