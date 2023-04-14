@@ -6,9 +6,25 @@ bot = discord.Bot(intents=discord.Intents.all(), help_command=None, debug_guilds
 
 @bot.event
 async def on_ready():
-    print('Online')
-    print('Bot Name: ' + bot.user.name + ' | Bot ID: ' + str(bot.user.id) + ' | Bot Version: ' + discord.__version__)
+    await bot.wait_until_ready()
+    infos = [
+        f"Pycord:    {discord.__version__}",
+        f"Ping:      {round(bot.latency * 1000):,}ms",
+        f"Guilds:    {len(bot.guilds):,}",
+        f"Users:     {len(bot.users)}",
+        f"Commands:  {len(bot.commands):,}",
+        f"Bot Owner: {(await bot.application_info()).owner}"
+    ]
 
+    longest = max([str(i) for i in infos], key=len)
+    formatter = f"<{len(longest)}"
+
+    start_txt = "Bot is online!"
+    start_txt += f"\n╔{(len(longest) + 2) * '═'}╗\n"
+    for thing in infos:
+        start_txt += f"║ {thing:{formatter}} ║\n"
+    start_txt += f"╚{(len(longest) + 2) * '═'}╝"
+    print(start_txt)
 
 if __name__ == "__main__":
     for filename in os.listdir("cog"):
