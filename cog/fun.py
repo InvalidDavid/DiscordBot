@@ -45,7 +45,7 @@ class MemeButton(discord.ui.View):
             user_agent=''
         ) as reddit:
             subreddit = await reddit.subreddit(self.thema)
-            hot = subreddit.hot(limit=25)
+            hot = subreddit.top(limit=25)
 
             all_posts = []
             async for post in hot:
@@ -68,7 +68,30 @@ class Test(commands.Cog):
         self.bot = bot
 
     @slash_command(description="Sende Memes und wähle dein Thema aus")
-    async def meme(self, ctx, thema: Option(str, description="Wähle dein Thema aus", required=False, default="ich_iel")):
+    async def meme(self, ctx, thema: Option(description="Thema", required=False, choices=["ich_iel", "ProgrammerHumor", "dankmemes", "memes", "me_irl", "funny", "wholesomememes", "MemeEconomy", "AdviceAnimals"],default=0)):
+        if thema == 0:
+            thema = random.choice(
+            ["ich_iel", "ProgrammerHumor", "dankmemes", "memes", "me_irl", "funny", "wholesomememes", "MemeEconomy",
+             "AdviceAnimals"])
+        elif thema == "ich_iel":
+            thema = "ich_iel"
+        elif thema == "ProgrammerHumor":
+            thema = "ProgrammerHumor"
+        elif thema == "dankmemes":
+            thema = "dankmemes"
+        elif thema == "memes":
+            thema = "memes"
+        elif thema == "me_irl":
+            thema = "me_irl"
+        elif thema == "funny":
+            thema = "funny"
+        elif thema == "wholesomememes":
+            thema = "wholesomememes"
+        elif thema == "MemeEconomy":
+            thema = "MemeEconomy"
+        elif thema == "AdviceAnimals":
+            thema = "AdviceAnimals"
+
         try:
             embed = discord.Embed(
                 color=discord.Color.blurple(),
@@ -87,7 +110,7 @@ class Test(commands.Cog):
                     user_agent=''
             ) as reddit:
                 subreddit = await reddit.subreddit(thema)
-                hot = subreddit.hot(limit=25)
+                hot = subreddit.top(limit=25)
 
                 all_posts = []
                 async for post in hot:
@@ -111,9 +134,10 @@ class Test(commands.Cog):
             embed = discord.Embed(
                 color=discord.Color.red(),
                 title="Error",
-                description="Dieses Thema existiert nicht."
+                description=f"{thema} existiert nicht."
             )
             await msg.edit(embed=embed)
+
 
     @slash_command()
     @commands.cooldown(1, 5, commands.BucketType.channel)
