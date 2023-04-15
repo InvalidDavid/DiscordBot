@@ -156,7 +156,8 @@ class Verify(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    verify = SlashCommandGroup("verify", "Verifizierung")
+    verify = SlashCommandGroup("verify", default_member_permissions=discord.Permissions(administrator=True),
+                                       guild_only=True)
 
     @verify.command()
     @discord.default_permissions(administrator=True)
