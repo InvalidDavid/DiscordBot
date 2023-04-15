@@ -26,7 +26,8 @@ class FeedbackSystem(commands.Cog):
         else:
             pass
 
-    feedback = SlashCommandGroup(name='feedback', description='Feedback System')
+    feedback = SlashCommandGroup('feedback', default_member_permissions=discord.Permissions(administrator=True),
+                                       guild_only=True)
 
 
     @feedback.command(description="Setzt den Feedback Kanal")
