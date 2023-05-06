@@ -5,3 +5,4 @@ os
 python-dotenv
 sqlite3
 asyncpraw
+PIL
