@@ -1,126 +1,117 @@
 import discord
 from discord.ext import commands
-import math
 
-ERROR_EMOJI = "<:DP_bbye:972516085238726756>"
+FEHLER_SYMBOL = "❌"
+SUPPORT_SERVER = "kekw"
 
-class ErrorHandler(commands.Cog):
+
+class FehlerHandler(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    def _format_cooldown(self, seconds: float) -> str:
-        """Formatiert Cooldown in Tage, Stunden, Minuten, Sekunden."""
-        seconds = int(math.ceil(seconds))
-        days, seconds = divmod(seconds, 86400)
-        hours, seconds = divmod(seconds, 3600)
-        minutes, seconds = divmod(seconds, 60)
-        parts = []
-        if days > 0:
-            parts.append(f"{days} {'Tag' if days == 1 else 'Tage'}")
-        if hours > 0:
-            parts.append(f"{hours} {'Stunde' if hours == 1 else 'Stunden'}")
-        if minutes > 0:
-            parts.append(f"{minutes} {'Minute' if minutes == 1 else 'Minuten'}")
-        if seconds > 0:
-            parts.append(f"{seconds} {'Sekunde' if seconds == 1 else 'Sekunden'}")
-        return ", ".join(parts)
+    @staticmethod
+    async def sende_fehler_embed(ctx, titel, beschreibung, ephemeral=False):
+        embed = discord.Embed(
+            color=discord.Color.red(),
+            title=titel,
+            description=f"{FEHLER_SYMBOL} | {beschreibung}"
+        )
 
-    async def _send_error_embed(self, ctx, title: str, description: str, ephemeral: bool = False):
-        embed = discord.Embed(title=title, description=f"{ERROR_EMOJI} | {description}", color=discord.Color.red())
-        # Je nach ctx Typ: respond (Slash), reply (Prefix)
-        if hasattr(ctx, "respond"):  # Slash Command Kontext
-            await ctx.respond(embed=embed, ephemeral=ephemeral)
-        else:
+        if isinstance(ctx, commands.Context):
             await ctx.reply(embed=embed)
+        else:
+            await ctx.respond(embed=embed, ephemeral=ephemeral)
+
+    @staticmethod
+    def format_cooldown(sekunden):
+        tage, rest = divmod(int(sekunden), 86400)
+        stunden, rest = divmod(rest, 3600)
+        minuten, sekunden = divmod(rest, 60)
+
+        teile = []
+        if tage:
+            teile.append(f"{tage} Tage")
+        if stunden:
+            teile.append(f"{stunden} Stunden")
+        if minuten:
+            teile.append(f"{minuten} Minuten")
+        if sekunden or not teile:
+            teile.append(f"{sekunden} Sekunden")
+
+        return ", ".join(teile)
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
-        await self._handle_error(ctx, error)
+        fehler_zuordnungen = {
+            commands.MissingPermissions: ("Fehlende Berechtigungen",
+                                          "Ihnen fehlen Berechtigungen zur Verwendung dieses Befehls."),
+            commands.TooManyArguments: ("Zu viele Argumente", "Sie haben zu viele Argumente vorgebracht."),
+            commands.DisabledCommand: ("Befehl Deaktiviert", "Dieser Befehl ist derzeit deaktiviert."),
+            commands.MissingAnyRole: ("Fehlende Rolle", "Dafür benötigen Sie eine bestimmte Rolle."),
+            commands.MessageNotFound: ("Nicht gefunden", "Diese Meldung wurde nicht gefunden."),
+            commands.MemberNotFound: ("Nicht gefunden", "Dieser Benutzer wurde nicht gefunden."),
+            commands.UserNotFound: ("Nicht gefunden", "Dieser Benutzer wurde nicht gefunden."),
+            commands.ChannelNotFound: ("Nicht gefunden", "Der Kanal wurde nicht gefunden."),
+            commands.ChannelNotReadable: ("Fehlender Zugriff",
+                                          "Ich kann die Nachrichten auf diesem Kanal nicht lesen."),
+            commands.BadColourArgument: ("Nicht gefunden", "Ich konnte diese Farbe nicht finden."),
+            commands.RoleNotFound: ("Nicht gefunden", "Ich habe diese Rolle nicht gefunden."),
+            commands.BotMissingPermissions: ("Fehlende Berechtigungen", "Dafür benötige ich Berechtigungen."),
+            commands.EmojiNotFound: ("Nicht gefunden",
+                                     "Ich konnte dieses Emoji nicht finden oder ich teile keinen Server mit diesem Emoji!"),
+            commands.PrivateMessageOnly: ("Kein Zugriff", "Dieser Befehl funktioniert nur in DMs."),
+            commands.NoPrivateMessage: ("Kein Zugriff", "Dieser Befehl funktioniert nur auf Servern."),
+            commands.NSFWChannelRequired: ("NSFW Kanal benötigt",
+                                           "Sie können diesen Befehl nur in einem NSFW-Kanal ausführen."),
+            commands.NotOwner: ("Fehlende Berechtigungen", "Nur der Besitzer kann diesen Befehl verwenden."),
+            commands.BotMissingAnyRole: ("Fehlende Berechtigungen", "Dafür brauche ich eine bestimmte Rolle."),
+            commands.PartialEmojiConversionFailure: ("Nicht gefunden", "Das ist kein Emoji.")
+        }
+
+        if isinstance(error, commands.CommandOnCooldown):
+            cooldown_zeit = self.format_cooldown(error.retry_after)
+            await self.sende_fehler_embed(
+                ctx,
+                "Cooldown",
+                f"Der Befehl ist auf Abklingzeit, bitte erneut in {cooldown_zeit}."
+            )
+            return
+
+        for fehler_typ, (titel, beschreibung) in fehler_zuordnungen.items():
+            if isinstance(error, fehler_typ):
+                await self.sende_fehler_embed(ctx, titel, beschreibung)
+                return
+
+        embed = discord.Embed(
+            color=discord.Color.red(),
+            title="Command Error",
+            description=f"{FEHLER_SYMBOL} | Es ist ein Fehler aufgetreten!\nBitte melden Sie diesen Fehler im [Support Server]({SUPPORT_SERVER})."
+        )
+        embed.set_author(name=ctx.author)
+        embed.add_field(name="Error", value=f"```py\n{error}```")
+        await ctx.reply(embed=embed)
 
     @commands.Cog.listener()
     async def on_application_command_error(self, ctx, error):
-        await self._handle_error(ctx, error, ephemeral=True)
-
-    async def _handle_error(self, ctx, error, ephemeral=False):
-        # Mögliche Fehler zusammenfassen, um Duplikate zu vermeiden
-        if isinstance(error, commands.MissingPermissions):
-            await self._send_error_embed(ctx, "Fehlende Berechtigungen", "Ihnen fehlen Berechtigungen zur Verwendung dieses Befehls.", ephemeral)
+        if isinstance(error, commands.CommandError):
+            await self.on_command_error(ctx, error)
             return
 
-        if isinstance(error, commands.TooManyArguments):
-            await self._send_error_embed(ctx, "Zu viele Argumente", "Sie haben zu viele Argumente vorgebracht.", ephemeral)
-            return
+        if isinstance(error, discord.ApplicationCommandInvokeError):
+            original = error.original
+            if isinstance(original, commands.CommandError):
+                await self.on_command_error(ctx, original)
+                return
 
-        if isinstance(error, commands.DisabledCommand):
-            await self._send_error_embed(ctx, "Befehl deaktiviert", "Dieser Befehl ist derzeit deaktiviert.", ephemeral)
-            return
-
-        if isinstance(error, commands.MissingAnyRole):
-            await self._send_error_embed(ctx, "Fehlende Rolle", "Dafür benötigen Sie eine bestimmte Rolle.", ephemeral)
-            return
-
-        if isinstance(error, commands.CommandOnCooldown):
-            cooldown_str = self._format_cooldown(error.retry_after)
-            await self._send_error_embed(ctx, "Cooldown", f"Der Befehl ist auf Abklingzeit, bitte erneut in {cooldown_str}.", ephemeral)
-            return
-
-        not_found_errors = (
-            commands.MessageNotFound,
-            commands.MemberNotFound,
-            commands.UserNotFound,
-            commands.ChannelNotFound,
-            commands.RoleNotFound,
-            commands.EmojiNotFound,
-            commands.PartialEmojiConversionFailure,
+        embed = discord.Embed(
+            color=discord.Color.red(),
+            title="Command Error",
+            description=f"{FEHLER_SYMBOL} | Es ist ein Fehler aufgetreten!\nBitte melden Sie diesen Fehler im [Support Server]({SUPPORT_SERVER})."
         )
-        if isinstance(error, not_found_errors):
-            await self._send_error_embed(ctx, "Nicht gefunden", "Das gesuchte Element wurde nicht gefunden.", ephemeral)
-            return
+        embed.set_author(name=ctx.user)
+        embed.add_field(name="Error", value=f"```py\n{error}```")
+        await ctx.respond(embed=embed, ephemeral=True)
 
-        if isinstance(error, commands.ChannelNotReadable):
-            await self._send_error_embed(ctx, "Fehlender Zugriff", "Ich kann die Nachrichten auf diesem Kanal nicht lesen.", ephemeral)
-            return
-
-        if isinstance(error, commands.BadColourArgument):
-            await self._send_error_embed(ctx, "Ungültige Farbe", "Ich konnte diese Farbe nicht finden.", ephemeral)
-            return
-
-        if isinstance(error, commands.BotMissingPermissions):
-            await self._send_error_embed(ctx, "Fehlende Berechtigungen", "Dafür benötige ich Berechtigungen.", ephemeral)
-            return
-
-        if isinstance(error, commands.PrivateMessageOnly):
-            await self._send_error_embed(ctx, "Kein Zugriff", "Dieser Befehl funktioniert nur in DMs.", ephemeral)
-            return
-
-        if isinstance(error, commands.NoPrivateMessage):
-            await self._send_error_embed(ctx, "Kein Zugriff", "Dieser Befehl funktioniert nur auf Servern.", ephemeral)
-            return
-
-        if isinstance(error, commands.NSFWChannelRequired):
-            await self._send_error_embed(ctx, "NSFW-Kanal erforderlich", "Sie können diesen Befehl nur in einem NSFW-Kanal ausführen.", ephemeral)
-            return
-
-        if isinstance(error, commands.NotOwner):
-            await self._send_error_embed(ctx, "Fehlende Berechtigungen", "Nur der Besitzer kann diesen Befehl verwenden.", ephemeral)
-            return
-
-        if isinstance(error, commands.BotMissingAnyRole):
-            await self._send_error_embed(ctx, "Fehlende Berechtigungen", "Dafür brauche ich eine bestimmte Rolle.", ephemeral)
-            return
-
-        # Unbekannte Fehler — ausführliche Meldung nur in Prefix-Commands sichtbar, bei Slash ephemeral False wegen Support-Server
-        if not ephemeral:
-            embed = discord.Embed(
-                title="Unbekannter Fehler",
-                description=f"{ERROR_EMOJI} | Ein unerwarteter Fehler ist aufgetreten. Bitte melde ihn im Support Server.\n```py\n{error}```",
-                color=discord.Color.red()
-            )
-            embed.set_author(name=str(ctx.author))
-            await ctx.reply(embed=embed)
-        else:
-            # Slash Commands: Einfach Loggen, keine Details senden (Sicherheitsgründe)
-            print(f"[SlashCommand Error] {error}")
 
 def setup(bot):
-    bot.add_cog(ErrorHandler(bot))
+    bot.add_cog(FehlerHandler(bot))
