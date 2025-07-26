@@ -2,7 +2,15 @@ import discord
 import os
 from dotenv import load_dotenv
 
-bot = discord.Bot(intents=discord.Intents.all(), help_command=None, debug_guilds=[ServerID]) # discord.Bot erlaubt nur Slash Commands
+load_dotenv()
+
+
+bot = discord.Bot(
+    intents=discord.Intents.all(),
+    debug_guilds=[int(guild) for guild in os.getenv("DEBUG_GUILDS", "").split(",") if guild.strip()]
+)
+
+
 
 @bot.event
 async def on_ready():
@@ -13,7 +21,6 @@ async def on_ready():
         f"Guilds:    {len(bot.guilds):,}",
         f"Users:     {len(bot.users)}",
         f"Commands:  {len(bot.commands):,}",
-        f"Bot Owner: {(await bot.application_info()).owner}"
     ]
 
     longest = max([str(i) for i in infos], key=len)
@@ -26,11 +33,20 @@ async def on_ready():
     start_txt += f"╚{(len(longest) + 2) * '═'}╝"
     print(start_txt)
 
+    activity = discord.Game(name="mit den Chaos")
+    await bot.change_presence(status=discord.Status.online, activity=activity)
+
+
 if __name__ == "__main__":
     for filename in os.listdir("cog"):
         if filename.endswith(".py"):
-            bot.load_extension(f"cog.{filename[:-3]}")
-            
+            cog = f"cog.{filename[:-3]}"
+            try:
+                bot.load_extension(cog)
+                print(f"[+] Geladen: {cog}")
+            except Exception as e:
+                print(f"[!] Fehler beim Laden von {cog}: {e}")
+            # bot.load_extension(f"cog.{filename[:-3]}")
+
     load_dotenv()
-    print('Support: https://discord.gg/paradies\nCredits: https://youtu.be/Bb2hrOIhi40')
     bot.run(os.getenv("TOKEN"))
