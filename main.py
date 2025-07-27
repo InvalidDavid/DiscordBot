@@ -33,8 +33,8 @@ async def on_ready():
     start_txt += f"╚{(len(longest) + 2) * '═'}╝"
     print(start_txt)
 
-    activity = discord.Game(name="mit den Chaos")
-    await bot.change_presence(status=discord.Status.online, activity=activity)
+    # activity = discord.Game(name="mit den Chaos")
+    # await bot.change_presence(status=discord.Status.online, activity=activity)
 
 
 if __name__ == "__main__":
