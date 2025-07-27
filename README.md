@@ -37,7 +37,7 @@ Dies ist ein selbstentwickelter Discord-Bot, programmiert in Python mit dem **py
    `pip install -r requirements.txt` (enthält py-cord)  
 4. Bot Token in `config.py` oder Umgebungsvariable eintragen  
 5. Bot starten:  
-   `python bot.py`  
+   `python main.py`  
 
 ### Autostart (Raspberry Pi)
 - systemd-Service-Datei erstellen, um den Bot automatisch beim Systemstart zu starten  
@@ -45,10 +45,9 @@ Dies ist ein selbstentwickelter Discord-Bot, programmiert in Python mit dem **py
 ### Autostart / Monitoring (Online-Hosting)
 - Plattform-spezifische Tools nutzen, z.B. Heroku Dyno Restart, Replit Always-On
 
-## Weiterentwicklung (Projekt eingestellt)
+## Weiterentwicklung
 - Erweiterte Fehlerbehandlung  
-- Datenbankintegration (z.B. SQLite)  
-- Mehr Benutzerrechte-Management  
+- irgendwas
 
 ## Wichtige Hinweise
 - Die Codes nicht als eure ausgeben.  
