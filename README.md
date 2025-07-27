@@ -7,10 +7,8 @@ Das ist eine Python-Bibliothek, die auf [discord.py](https://github.com/Rapptz/d
 Dies ist ein selbstentwickelter Discord-Bot, programmiert in Python mit dem **py-cord** Framework. Der Bot bietet Benutzerinteraktionen, Rollenverwaltung und einfache API-Integration. Ziel war es, praxisnah Programmier- und Systemadministrationskenntnisse zu vertiefen.
 
 ## Funktionen
-- Benutzerbefehle (z.B. Rollenverwaltung, Info-Commands)  
-- Event-Handling (z.B. Reaktion auf Nachrichten, Bilder bearbeitung)  
-- API-Anbindung (z.B. externe Daten abrufen)  
-- Automatischer Bot-Start und Monitoring (je nach Hosting-Methode, Verifizierung)  
+- Error Handler
+- Verifizierung System mit Sql3 Datenbank
 
 ## Technische Details
 - Programmiersprache: Python 3.9+  
