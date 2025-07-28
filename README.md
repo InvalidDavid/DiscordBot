@@ -9,6 +9,8 @@ Dies ist ein selbstentwickelter Discord-Bot, programmiert in Python mit dem **py
 ## Funktionen
 - Error Handler
 - Verifizierung System mit Sql3 Datenbank
+- Ticket System
+- more coming...
 
 ## Technische Details
 - Programmiersprache: Python 3.9+  
