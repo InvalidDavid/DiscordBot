@@ -45,11 +45,10 @@ Dies ist ein selbstentwickelter Discord-Bot, programmiert in Python mit dem **py
 ### Autostart / Monitoring (Online-Hosting)
 - Plattform-spezifische Tools nutzen, z.B. Heroku Dyno Restart, Replit Always-On
 
-## Weiterentwicklung
-- Erweiterte Fehlerbehandlung  
-- irgendwas
+
 
 ## Wichtige Hinweise
+- Ihr braucht eine Kategorie names "Data" wo eure datenbanken erstellt werden
 - Die Codes nicht als eure ausgeben.  
 - Lizenz beachten.  
 - Es kommen regelmäßig neue Codes und Updates.  
