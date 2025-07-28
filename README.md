@@ -9,7 +9,7 @@ Dies ist ein selbstentwickelter Discord-Bot, programmiert in Python mit dem **py
 ## Funktionen
 - Error Handler
 - Verifizierung System mit Sql3 Datenbank
-- Ticket System
+- Ticket System statt Channel erstellt es private threads
 - more coming...
 
 ## Technische Details
