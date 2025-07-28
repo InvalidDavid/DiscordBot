@@ -13,7 +13,6 @@ def get_db_connection():
     return connection
 
 
-# Initialize database tables
 with get_db_connection() as db_conn:
     db_conn.execute('''CREATE TABLE IF NOT EXISTS verify(
                       guild_id INTEGER PRIMARY KEY,
@@ -217,7 +216,7 @@ class Verify(commands.Cog):
         self.bot = bot
 
     verify = SlashCommandGroup(
-        name="verify",
+        name="verifizierung",
         description="Verifizierungssystem verwalten",
         default_member_permissions=discord.Permissions(administrator=True)
     )
@@ -312,6 +311,10 @@ class Verify(commands.Cog):
             view=VerifyConfirmationView(self.bot, channel.id, embed_farbe),
             ephemeral=True
         )
+
+
+
+
 
     @commands.Cog.listener()
     async def on_ready(self):
