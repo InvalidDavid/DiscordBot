@@ -1,5 +1,7 @@
 import discord
 from discord.ext import commands
+from datetime import datetime, timedelta, timezone
+
 
 FEHLER_SYMBOL = "❌"
 SUPPORT_SERVER = "kekw"
@@ -9,8 +11,9 @@ class FehlerHandler(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+
     @staticmethod
-    async def sende_fehler_embed(ctx, titel, beschreibung, ephemeral=False):
+    async def sende_fehler_embed(ctx, titel, beschreibung, ephemeral=True):
         embed = discord.Embed(
             color=discord.Color.red(),
             title=titel,
@@ -23,22 +26,14 @@ class FehlerHandler(commands.Cog):
             await ctx.respond(embed=embed, ephemeral=ephemeral)
 
     @staticmethod
-    def format_cooldown(sekunden):
-        tage, rest = divmod(int(sekunden), 86400)
-        stunden, rest = divmod(rest, 3600)
-        minuten, sekunden = divmod(rest, 60)
+    def cooldown_timestamp(seconds: float, show_absolute: bool = True) -> str:
+        target_time = datetime.now(timezone.utc) + timedelta(seconds=seconds)
 
-        teile = []
-        if tage:
-            teile.append(f"{tage} Tage")
-        if stunden:
-            teile.append(f"{stunden} Stunden")
-        if minuten:
-            teile.append(f"{minuten} Minuten")
-        if sekunden or not teile:
-            teile.append(f"{sekunden} Sekunden")
+        relative = discord.utils.format_dt(target_time, style='R')
+        absolute = discord.utils.format_dt(target_time, style='F')
 
-        return ", ".join(teile)
+        return f"{relative} ({absolute})" if show_absolute else relative
+
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -69,11 +64,11 @@ class FehlerHandler(commands.Cog):
         }
 
         if isinstance(error, commands.CommandOnCooldown):
-            cooldown_zeit = self.format_cooldown(error.retry_after)
+            timestamp = self.cooldown_timestamp(error.retry_after, show_absolute=True)
             await self.sende_fehler_embed(
                 ctx,
                 "Cooldown",
-                f"Der Befehl ist auf Abklingzeit, bitte erneut in {cooldown_zeit}."
+                f"Der Befehl ist auf Abklingzeit, bitte erneut {timestamp}."
             )
             return
 
