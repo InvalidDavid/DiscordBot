@@ -7,11 +7,13 @@ from typing import List, Tuple, Optional
 import datetime
 import asyncio
 import io
+import json # fuer den embed
 
+DB_PATH = "Data/ticket.db"
 
 
 class TicketDatenbank:
-    def __init__(self, db_name: str = "Data/ticket.db"):
+    def __init__(self, db_name: str = DB_PATH):
         self.conn = sqlite3.connect(db_name)
         self._create_tables()
 
@@ -49,6 +51,16 @@ class TicketDatenbank:
             PRIMARY KEY (guild_id, kategorie_name)
         )
         """)
+
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ticket_panels (
+            guild_id INTEGER PRIMARY KEY,
+            embed_json TEXT NOT NULL,
+            message_id INTEGER NULL
+        )
+        """)
+
         self.conn.commit()
 
     def ticket_erstellen(self, guild_id: int, thread_id: int, ersteller_id: int, kategorie: str) -> int:
@@ -131,6 +143,35 @@ class TicketDatenbank:
         """, (guild_id,))
         return cursor.fetchall()
 
+
+        self.conn.commit()
+
+    def save_panel(self, guild_id: int, embed: discord.Embed, message_id: int = None):
+        try:
+            embed_dict = embed.to_dict()
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO ticket_panels 
+                (guild_id, embed_json, message_id)
+                VALUES (?, ?, ?)
+            """, (guild_id, json.dumps(embed_dict), message_id))
+            self.conn.commit()
+        except Exception as e:
+            print(f"Fehler beim Speichern des Embeds: {e}")
+
+    def load_panel(self, guild_id: int) -> Optional[Tuple]:
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT embed_json, message_id FROM ticket_panels WHERE guild_id = ?", (guild_id,))
+        result = cursor.fetchone()
+        if result:
+            try:
+                embed_dict = json.loads(result[0])
+                return discord.Embed.from_dict(embed_dict), result[1]
+            except Exception as e:
+                print(f"[Fehler beim Laden des Embeds] {e}")
+        return None, None
+
+
     def close(self):
         self.conn.close()
 
@@ -182,6 +223,7 @@ class TicketKategorieSelect(discord.ui.Select):
         self.view.clear_items()
         message = await interaction.original_response()
         await message.edit(view=self.view, delete_after=10)
+
 
 
 
@@ -335,6 +377,8 @@ class TicketErstellenView(discord.ui.View):
                 print(f"Error sending error message: {e2}")
 
 
+
+
 class TicketManagementView(discord.ui.View):
     def __init__(self, bot, db):
         super().__init__(timeout=None)
@@ -410,7 +454,7 @@ class TicketManagementView(discord.ui.View):
                 child.disabled = True
 
             try:
-                await message.edit(view=confirm_view)
+                await message.edit(view=None)
                 await message.delete(delay=5.0)
             except discord.NotFound:
                 pass
@@ -501,6 +545,8 @@ class TicketManagementView(discord.ui.View):
                 await log_channel.send(embed=log_embed, file=transcript_file)
 
 
+
+
 class TicketSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -513,6 +559,37 @@ class TicketSystem(commands.Cog):
         self.bot.add_view(TicketManagementView(self.bot, self.db))
 
     ticket = SlashCommandGroup("ticket", "Ticket-System Befehle")
+    kategorie = ticket.create_subgroup("kategorie", description="Kategorie der Ticket")
+
+    @ticket.command(name="einstellungen", description="Ändert die Ticket-System Einstellungen")
+    @commands.has_permissions(administrator=True)
+    async def ticket_einstellungen(self, ctx):
+        settings = self.db.get_einstellungen(ctx.guild.id)
+        if not settings:
+            return await ctx.respond(
+                "❌ Das Ticket-System wurde noch nicht eingerichtet! Bitte verwende zuerst `/ticket setup`.",
+                ephemeral=True
+            )
+
+        embed = discord.Embed(
+            title="🎛️ Ticket-Einstellungen",
+            description="Wähle unten aus, was du bearbeiten möchtest.",
+            color=discord.Color.blurple()
+        )
+        embed.add_field(
+            name="Aktuelle Einstellungen",
+            value=(
+                f"**Support-Rolle:** {f'<@&{settings[1]}>' if settings[1] else '❌ Nicht gesetzt'}\n"
+                f"**Transkript-Channel:** {f'<#{settings[2]}>' if settings[2] else '❌ Nicht gesetzt'}\n"
+                f"**Ticket-Channel:** {f'<#{settings[3]}>' if settings[3] else '❌ Nicht gesetzt'}\n"
+                f"**Log-Channel:** {f'<#{settings[4]}>' if settings[4] else '❌ Nicht gesetzt'}"
+            ),
+            inline=False
+        )
+
+        view = EinstellungenAuswahlView(self.db, ctx.guild.id, ctx.user, self.bot)
+        msg = await ctx.respond(embed=embed, view=view, ephemeral=True)
+        view.message = await msg.original_response()
 
     @ticket.command(name="setup", description="Richtet das Ticket-System ein")
     @commands.has_permissions(administrator=True)
@@ -544,39 +621,51 @@ class TicketSystem(commands.Cog):
         )
         await ctx.respond(embed=embed, ephemeral=True)
 
-    @ticket.command(name="nachricht", description="Erstellt ein Ticket-Panel")
+    @ticket.command(name="nachricht", description="Sendet das aktuelle Ticket-Panel")
     @commands.has_permissions(administrator=True)
-    async def create_panel(
-            self,
-            ctx,
-            titel: Option(str, "Titel des Panels", default="Support-Ticket System"),
-            beschreibung: Option(str, "Beschreibung des Panels",
-                                 default="Klicke auf den Button unten, um ein Ticket zu erstellen."),
-            farbe: Option(str, "Farbe als Hex-Code (z.B. #ff0000)", default="#5865F2"),
-            button_text: Option(str, "Button-Text", default="Ticket erstellen"),
-            button_emoji: Option(str, "Button-Emoji", required=False)
-    ):
-        try:
-            color = int(farbe.lstrip("#"), 16)
-        except ValueError:
-            color = discord.Color.blue()
+    async def send_panel(self, ctx):
+        settings = self.db.get_einstellungen(ctx.guild.id)
+        if not settings or not settings[3]:
+            return await ctx.respond("❌ Konfiguriere zuerst einmal mit `/ticket setup`!", ephemeral=True)
 
-        embed = Embed(
-            title=titel,
-            description=beschreibung,
-            color=color
-        )
+        channel = ctx.guild.get_channel(settings[3])
+        if not channel:
+            return await ctx.respond("❌ Konfiguriere zuerst einmal mit `/ticket setup`!", ephemeral=True)
+
+        embed, message_id = self.db.load_panel(ctx.guild.id)
+        if not embed:
+            embed = discord.Embed(
+                title="🎫 Ticket-System",
+                description="Klicke unten um ein Ticket zu erstellen",
+                color=discord.Color.blue()
+            )
 
         view = TicketErstellenView(self.bot, self.db)
-        button = view.children[0]
-        button.label = button_text
-        if button_emoji:
-            button.emoji = button_emoji
+        msg = await channel.send(embed=embed, view=view)
+        self.db.save_panel(ctx.guild.id, embed, msg.id)
+        self.bot.add_view(view, message_id=msg.id)
 
-        await ctx.send(embed=embed, view=view)
-        await ctx.respond("✅ Panel erfolgreich erstellt!", ephemeral=True)
+        return await ctx.respond(f"✅ Panel wurde in {channel.mention} gesendet!", ephemeral=True)
 
-    @ticket.command(name="kategorien_hinzufuegen", description="Fügt eine Ticket-Kategorie hinzu")
+    @ticket.command(name="embed", description="Bearbeitet das Ticket-Panel Embed")
+    @commands.has_permissions(administrator=True)
+    async def edit_embed(self, ctx):
+
+        embed_data = self.db.load_panel(ctx.guild.id)
+
+        embed = embed_data[0] if embed_data and embed_data[0] else None
+
+        if embed is None:
+            embed = discord.Embed(
+                title="🎫 Ticket-System",
+                description="Klicke unten um ein Ticket zu erstellen",
+                color=discord.Color.blue()
+            )
+
+        view = EmbedBuilderView(self.db, ctx.guild.id)
+        await ctx.respond("✍️ Bearbeite das Ticket-Panel:", embed=embed, view=view, ephemeral=True)
+
+    @kategorie.command(name="hinzufuegen", description="Fügt eine Ticket-Kategorie hinzu")
     @commands.has_permissions(administrator=True)
     async def add_kategorie(
         self,
@@ -598,7 +687,7 @@ class TicketSystem(commands.Cog):
         await ctx.respond(f"✅ Kategorie **{name}** wurde hinzugefügt.", ephemeral=True)
 
 
-    @ticket.command(name="kategorien_entfernen", description="Entfernt eine Ticket-Kategorie")
+    @kategorie.command(name="entfernen", description="Entfernt eine Ticket-Kategorie")
     @option("name", description="Name der Kategorie", autocomplete=autocomplete_kategorienliste)
     @commands.has_permissions(administrator=True)
     async def remove_kategorie(self, ctx, name: str):
@@ -612,7 +701,7 @@ class TicketSystem(commands.Cog):
 
 
 
-    @ticket.command(name="kategorien_liste", description="Zeigt alle Ticket-Kategorien")
+    @kategorie.command(name="liste", description="Zeigt alle Ticket-Kategorien")
     @commands.has_permissions(administrator=True)
     async def list_kategorien(self, ctx):
         kategorien = self.db.get_kategorien(ctx.guild.id)
@@ -628,3 +717,1084 @@ class TicketSystem(commands.Cog):
 
 def setup(bot):
     bot.add_cog(TicketSystem(bot))
+
+
+class TicketErstellenButton(discord.ui.Button):
+    def __init__(self, bot, db):
+        super().__init__(
+            style=discord.ButtonStyle.primary,
+            label="Ticket erstellen",
+            custom_id="persistent:ticket_create",
+            emoji="🎫"
+        )
+        self.bot = bot
+        self.db = db
+
+    async def callback(self, interaction: discord.Interaction):
+        settings = self.db.get_einstellungen(interaction.guild.id)
+        if not settings:
+            return await interaction.response.send_message(
+                "❌ Ticket-System wurde noch nicht eingerichtet!",
+                ephemeral=True
+            )
+
+        ticket_channel = interaction.guild.get_channel(settings[3])
+        if not ticket_channel:
+            return await interaction.response.send_message(
+                "❌ Ticket-Channel nicht gefunden!",
+                ephemeral=True
+            )
+
+        categories = self.db.get_kategorien(interaction.guild.id)
+        if not categories:
+            return await interaction.response.send_message(
+                "❌ Keine Kategorien verfügbar!",
+                ephemeral=True
+            )
+
+        thread = await ticket_channel.create_thread(
+            name=f"Ticket-{interaction.user.display_name}",
+            type=discord.ChannelType.private_thread
+        )
+
+        await thread.add_user(interaction.user)
+        support_role = interaction.guild.get_role(settings[1])
+        if support_role:
+            for member in support_role.members:
+                try:
+                    await thread.add_user(member)
+                except:
+                    continue
+
+        ticket_id = self.db.ticket_erstellen(
+            interaction.guild.id,
+            thread.id,
+            interaction.user.id,
+            "Allgemein"
+        )
+
+        embed = discord.Embed(
+            title=f"Ticket #{ticket_id}",
+            description=f"Hallo {interaction.user.mention},\n\n"
+                        "Bitte beschreibe dein Anliegen.\n"
+                        "Das Support-Team wird sich bald bei dir melden.",
+            color=discord.Color.blue()
+        )
+
+        view = EmbedBuilderView(self.db, interaction.guild.id)
+        await thread.send(
+            content=f"{interaction.user.mention} {support_role.mention if support_role else ''}",
+            embed=embed,
+            view=view
+        )
+
+        return await interaction.response.send_message(
+            f"✅ Ticket wurde erstellt: {thread.mention}",
+            ephemeral=True
+        )
+
+
+class CreateEmbedBuilderButton(discord.ui.Button):
+    def __init__(self, db, guild_id):
+        super().__init__(label="Embed erstellen", style=discord.ButtonStyle.green, emoji="🖋️")
+        self.db = db
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction):
+        embed = discord.Embed(title="Default Title", description="Default Description", color=discord.Color.blue())
+        builder_view = EmbedBuilderView(self.db, self.guild_id, embed)
+        await interaction.response.send_message("✍️ Bearbeite dein Embed unten:", embed=embed, view=builder_view, ephemeral=True)
+
+
+class SaveEmbedButton(discord.ui.Button):
+    def __init__(self, db, guild_id):
+        super().__init__(style=discord.ButtonStyle.green, label="Speichern")
+        self.db = db
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction):
+        embed = interaction.message.embeds[0]
+        self.db.save_panel(self.guild_id, embed)
+
+        await interaction.response.edit_message(
+            content="✅ Embed wurde gespeichert!",
+            embed=embed,
+            view=None
+        )
+
+
+
+
+class EmbedBuilderView(discord.ui.View):
+    def __init__(self, db, guild_id: int, has_saved_embed: bool = False):
+        super().__init__(timeout=600)
+        self.db = db
+        self.guild_id = guild_id
+        self.add_item(Dropdown())
+        self.add_item(SaveEmbedButton(db, guild_id))
+        self.add_item(ResetEmbedButton())
+
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.NotFound:
+                pass
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return interaction.user.guild_permissions.administrator
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception, item: discord.ui.Item):
+        await interaction.response.send_message(
+            "❌ Ein Fehler ist aufgetreten. Bitte versuche es erneut.",
+            ephemeral=True
+        )
+        print(f"Error in {item}: {error}")
+
+class SendEmbedButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(
+            style=discord.ButtonStyle.green,
+            label="Senden",
+            custom_id="send_embed_button",
+            emoji="📨"
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        settings = self.view.db.get_einstellungen(interaction.guild.id)
+        if not settings:
+            return await interaction.response.send_message(
+                "❌ Ticket-System nicht eingerichtet!",
+                ephemeral=True
+            )
+
+        support_role = interaction.guild.get_role(settings[1])
+        if not (interaction.user.guild_permissions.administrator or
+                (support_role and support_role in interaction.user.roles)):
+            return await interaction.response.send_message(
+                "❌ Nur Support-Mitglieder können Embeds senden!",
+                ephemeral=True
+            )
+
+        embed = interaction.message.embeds[0]
+        await interaction.channel.send(embed=embed)
+
+        return await interaction.response.send_message(
+            "✅ Embed wurde gesendet!",
+            ephemeral=True
+        )
+
+
+
+
+class Send(discord.ui.Button):
+    def __init__(self):
+        super().__init__(
+            label="Send",
+            style=discord.enums.ButtonStyle.green,
+            custom_id="interaction:send",
+            emoji="✉️"
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        message = interaction.message
+        channel = interaction.channel
+        if len(message.embeds) == 0 and not message.content:
+            return await interaction.response.send_message("Was willst du bitte senden", ephemeral=True)
+        if len(message.embeds) == 0:
+            await channel.send(content=message.content)
+        else:
+            embed = message.embeds[0]
+            final = embed.copy()
+
+            if message.content:
+                await channel.send(embed=embed,content=message.content)
+            else:
+                await channel.send(embed=embed)
+        return await interaction.response.send_message("Gesendet", ephemeral=True)
+
+
+async def check_embed(embed, checker):
+    list = embed.to_dict()
+    list_fields = len(list['fields'])
+    if checker == "":
+        if list_fields <= 0:
+            if len(list) < 4:
+                return False
+    return True
+
+class ResetEmbedButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(
+            style=discord.ButtonStyle.danger,
+            label="Zurücksetzen",
+            emoji="🗑️"
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        embed = discord.Embed(
+            title="🎫 Ticket-System",
+            description="Klicke unten um ein Ticket zu erstellen",
+            color=discord.Color.blue()
+        )
+        view = EmbedBuilderView(self.view.db, self.view.guild_id)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class content(discord.ui.Modal):
+    def __init__(self, label, placeholder, value, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.label = label
+        self.placeholder = placeholder
+        self.value = value
+
+        self.add_item(discord.ui.InputText(
+            required=False,
+            max_length=1999,
+            label=label,
+            placeholder=placeholder,
+            value=value,
+            style=discord.InputTextStyle.long
+        ))
+
+    async def callback(self, interaction: discord.Interaction):
+        message = interaction.message
+        await interaction.response.edit_message(content=self.children[0].value)
+
+class author(discord.ui.Modal):
+    def __init__(self, label, placeholder, value, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.label = label
+        self.placeholder = placeholder
+        self.value = value
+
+        self.add_item(discord.ui.InputText(
+            required=False,
+            max_length=200,
+            label=label,
+            placeholder=placeholder,
+            value=value,
+            style=discord.InputTextStyle.short
+        ))
+        self.add_item(discord.ui.InputText(
+            required=True,
+            max_length=200,
+            label="Author Icon",
+            placeholder="Author Icon Here...",
+            value=value,
+            style=discord.InputTextStyle.short
+        ))
+        self.add_item(discord.ui.InputText(
+            required=True,
+            max_length=200,
+            label="Author URL",
+            placeholder="Author URL Here...",
+            value=value,
+            style=discord.InputTextStyle.short
+        ))
+
+    async def callback(self, interaction: discord.Interaction):
+        message = interaction.message
+        embed = message.embeds[0]
+        check = await check_embed(embed, self.children[0].value)
+        if check is False:
+            return await interaction.response.send_message("Es muss midnesten ein feld vorhanden sein")
+
+        # embed.set_author(name=self.children[0].value,url=self.children[2].value,icon_url=self.children[1].value)
+
+        embeds = []
+        if not len(message.embeds) == 2 or len(message.embeds[1].fields) == 0:
+            embeds.append(embed)
+            embed2 = discord.Embed(description=f"Settings", color=discord.Color.yellow())
+            if self.children[0].value == "":
+                embed2.add_field(name="Author", value="default author")
+            else:
+                embed2.add_field(name="Author", value=self.children[0].value)
+
+            link_aiu = self.children[1].value
+            if link_aiu.find('http://') == 0 or link_aiu.find('https://') == 0:
+                embed2.add_field(name="Author Icon URL", value=self.children[1].value)
+
+            else:
+                embed2.add_field(name="Author Icon URL", value="https://www.pleaseenteravaildurladress.com/")
+
+            link_au = self.children[2].value
+            if link_au.find('http://') == 0 or link_au.find('https://') == 0:
+                embed2.add_field(name="Author URL", value=self.children[2].value)
+            else:
+                embed2.add_field(name="Author URL", value="https://www.pleaseenteravaildurladress.com/")
+            embeds.append(embed2)
+        else:
+            embeds.append(embed)
+            embed2 = message.embeds[1]
+            current_fields = embed2.fields.copy()
+            field_list = []
+            for field in current_fields:
+                field_list.append(field.name)
+                if field.name == "Author":
+                    embed2.remove_field(embed2.fields.index(field))
+                    if not self.children[0].value == "":
+                        embed2.add_field(name="Author", value=self.children[0].value)
+                elif field.name == "Author Icon URL":
+                    embed2.remove_field(embed2.fields.index(field))
+                    if not self.children[0].value == "":
+                        link_aiu2 = self.children[1].value
+                        if link_aiu2.find('http://') == 0 or link_aiu2.find('https://') == 0:
+                            embed2.add_field(name="Author Icon URL", value=self.children[1].value)
+                        else:
+                            embed2.add_field(name="Author Icon URL",
+                                             value="https://www.pleaseenteravaildurladress.com/")
+                elif field.name == "Author URL":
+                    embed2.remove_field(embed2.fields.index(field))
+                    if not self.children[0].value == "":
+                        link_au2 = self.children[2].value
+                        if link_au2.find('http://') == 0 or link_au2.find('https://') == 0:
+                            embed2.add_field(name="Author URL", value=self.children[2].value)
+                        else:
+                            embed2.add_field(name="Author URL", value="https://www.pleaseenteravaildurladress.com/")
+
+            if not "Author" in field_list or not "Author URL" in field_list or not "Author Icon URL" in field_list:
+                if self.children[0].value == "":
+                    embed2.add_field(name="Author", value="default author")
+                else:
+                    embed2.add_field(name="Author", value=self.children[0].value)
+
+                link_aiut = self.children[1].value
+                if link_aiut.find('http://') == 0 or link_aiut.find('https://') == 0:
+                    embed2.add_field(name="Author Icon URL", value=self.children[1].value)
+                else:
+                    embed2.add_field(name="Author Icon URL", value="https://www.pleaseenteravaildurladress.com/")
+
+                link_aut = self.children[2].value
+                if link_aut.find('http://') == 0 or link_aut.find('https://') == 0:
+                    embed2.add_field(name="Author URL", value=self.children[2].value)
+                else:
+                    embed2.add_field(name="Author URL", value="https://www.pleaseenteravaildurladress.com/")
+
+            embeds.append(embed2)
+
+        return await interaction.response.edit_message(embeds=embeds)
+
+
+class title(discord.ui.Modal):
+    def __init__(self, label, placeholder, value, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.label = label
+        self.placeholder = placeholder
+        self.value = value
+
+        self.add_item(discord.ui.InputText(
+            required=False,
+            max_length=50,
+            label=label,
+            placeholder=placeholder,
+            value=value,
+            style=discord.InputTextStyle.short
+        ))
+
+    async def callback(self, interaction: discord.Interaction):
+        message = interaction.message
+
+        embed = message.embeds[0]
+        check = await check_embed(embed, self.children[0].value)
+        if check is False:
+            return await interaction.response.send_message("Es muss midnesten ein feld vorhanden sein")
+        try:
+
+            embed.title = self.children[0].value
+        except:
+            pass
+
+        embeds = []
+        if len(message.embeds) == 2:
+            embeds.append(embed)
+            embeds.append(message.embeds[1])
+        else:
+            embeds.append(embed)
+
+        return await interaction.response.edit_message(embeds=embeds)
+
+
+class description(discord.ui.Modal):
+    def __init__(self, label, placeholder, value, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.label = label
+        self.placeholder = placeholder
+        self.value = value
+
+        self.add_item(discord.ui.InputText(
+            required=False,
+            max_length=500,
+            label=label,
+            placeholder=placeholder,
+            value=value,
+            style=discord.InputTextStyle.long
+        ))
+
+    async def callback(self, interaction: discord.Interaction):
+        # variablen = ["UserID","UserTag","Username","UserAvatarURL","UserBannerURL","UserCreateAT","UserJoined","Members","GuildID","Guildname","GuildIcon","GuildBannert"]
+        # variable_set = set(variablen)
+        text = self.children[0].value
+        # for variable in re.findall(r'{(.*?)}', text):
+        #     if variable not in variable_set:
+        #         text = text.replace("{" + variable + "}", "#####")
+        message = interaction.message
+        embed = message.embeds[0]
+        check = await check_embed(embed, text)
+        if check is False:
+            return await interaction.response.send_message("Es muss midnesten ein feld vorhanden sein")
+        try:
+            embed.description = text
+        except:
+            pass
+
+        embeds = []
+        if len(message.embeds) == 2:
+            embeds.append(embed)
+            embeds.append(message.embeds[1])
+        else:
+            embeds.append(embed)
+
+        return await interaction.response.edit_message(embeds=embeds)
+
+
+
+class footer(discord.ui.Modal):
+    def __init__(self, label, placeholder, value, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.label = label
+        self.placeholder = placeholder
+        self.value = value
+
+        self.add_item(discord.ui.InputText(
+            required=False,
+            max_length=50,
+            label=label,
+            placeholder=placeholder,
+            value=value,
+            style=discord.InputTextStyle.short
+        ))
+
+    async def callback(self, interaction: discord.Interaction):
+        message = interaction.message
+        embed = message.embeds[0]
+        check = await check_embed(embed, self.children[0].value)
+        if check is False:
+            return await interaction.response.send_message("Es muss midnesten ein feld vorhanden sein")
+        try:
+            embed.set_footer(text=self.children[0].value)
+        except:
+            pass
+
+        embeds = []
+        if len(message.embeds) == 2:
+            embeds.append(embed)
+            embeds.append(message.embeds[1])
+        else:
+            embeds.append(embed)
+
+        return interaction.response.edit_message(embeds=embeds)
+
+
+class color(discord.ui.Modal):
+    def __init__(self, label, placeholder, value, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.label = label
+        self.placeholder = placeholder
+        self.value = value
+
+        self.add_item(discord.ui.InputText(
+            required=False,
+            max_length=6,
+            min_length=6,
+            label=label,
+            placeholder=placeholder,
+            value=value,
+            style=discord.InputTextStyle.short
+        ))
+
+    async def callback(self, interaction: discord.Interaction):
+        message = interaction.message
+        embed = message.embeds[0]
+        check = await check_embed(embed, self.children[0].value)
+        if check is False:
+            return await interaction.response.send_message("Es muss midnesten ein feld vorhanden sein")
+        try:
+            farbe = f"0x{self.children[0].value}"
+            embed.colour = discord.Colour(int(farbe, 16))
+        except:
+            pass
+
+        embeds = []
+        if len(message.embeds) == 2:
+            embeds.append(embed)
+            embeds.append(message.embeds[1])
+        else:
+            embeds.append(embed)
+
+        return await interaction.response.edit_message(embeds=embeds)
+
+
+class field_add(discord.ui.Modal):
+    def __init__(self, dropdown, label, placeholder, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dropdown = dropdown
+        self.label = label
+        self.placeholder = placeholder
+
+        self.add_item(discord.ui.InputText(
+            required=True,
+            max_length=2000,
+            label=label,
+            placeholder=placeholder,
+            style=discord.InputTextStyle.short
+        ))
+
+        self.add_item(discord.ui.InputText(
+            required=True,
+            max_length=2000,
+            label="Field Value",
+            placeholder="Field Value Here...",
+            style=discord.InputTextStyle.long
+        ))
+
+        self.add_item(discord.ui.InputText(
+            required=True,
+            max_length=2000,
+            min_length=4,
+            label="Field Inline",
+            placeholder="Field Inline Here... (true or false)",
+            value="false",
+            style=discord.InputTextStyle.short
+        ))
+
+    async def callback(self, interaction: discord.Interaction):
+        message = interaction.message
+        embed = message.embeds[0]
+
+        if self.children[2].value == "true" or "false":
+            if len(embed.fields) == 24:
+                return await interaction.response.send_message(
+                    "Du Kannst nicht mehr als 25 Felder zu deinem Embed Hinzufügen", ephemeral=True)
+            else:
+                embed.add_field(name=self.children[0].value, value=self.children[1].value,
+                                inline=self.children[2].value)
+        else:
+            embed.add_field(name=self.children[0].value, value=self.children[1].value)
+
+        embeds = []
+        if len(message.embeds) == 2:
+            embeds.append(embed)
+            embeds.append(message.embeds[1])
+        else:
+            embeds.append(embed)
+
+        return await interaction.response.edit_message(embeds=embeds)
+
+
+class field_remove(discord.ui.Modal):
+    def __init__(self, label, placeholder, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.label = label
+        self.placeholder = placeholder
+
+        self.add_item(discord.ui.InputText(
+            required=True,
+            max_length=2,
+            label=label,
+            placeholder=placeholder,
+            style=discord.InputTextStyle.short
+        ))
+
+    async def callback(self, interaction: discord.Interaction):
+        message = interaction.message
+        embed = message.embeds[0]
+        if len(embed.fields) == 0:
+            return await interaction.response.send_message("Du kannst keine Felder entfernen, da keine Felder da sind", ephemeral=True)
+        else:
+            if len(embed.fields) == 0:
+                return await interaction.response.send_message(
+                    "Du Kannst nicht mehr Felder entfernen, weil keine da sind", ephemeral=True)
+            if len(embed.fields) > int(self.children[0].value):
+                embed.fields.pop(int(self.children[0].value))
+            else:
+                return await interaction.response.send_message(
+                    "Beachte, das die Zähung der Felder bei 0 beginnt also 0, 1, 2, ...", ephemeral=True)
+
+        embeds = []
+        if len(message.embeds) == 2:
+            embeds.append(embed)
+            embeds.append(message.embeds[1])
+        else:
+            embeds.append(embed)
+
+        return await interaction.response.edit_message(embeds=embeds)
+
+
+options = [
+            discord.SelectOption(label="Inhalt",  emoji="✍️", value="content"),
+            discord.SelectOption(label="Autor",  emoji="🗣️", value="author"),
+            discord.SelectOption(label="Titel",  emoji="📣", value="title"),
+            discord.SelectOption(label="Beschreibung",  emoji="📜",
+                                 value="description"),
+            discord.SelectOption(label="Fußzeile", emoji="📓", value="footer"),
+            discord.SelectOption(label="Farbe", emoji="🎨", value="color"),
+            discord.SelectOption(label="Timestamp",  emoji="⏰", value="timestamp"),
+            discord.SelectOption(label="Embed hinzufuegen",  emoji="➕", value="field_add"),
+            discord.SelectOption(label="Embed entfernen",  emoji="➖",
+                                 value="field_remove"),
+        ]
+
+class Dropdown(discord.ui.Select):
+    def __init__(self):
+        super().__init__(
+            placeholder="Feld auswählen",
+            min_values=1,
+            max_values=1,
+            options=options,
+            custom_id="interaction:Dropdown",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        not_embed = "Du musst ein Embed hinzufügen, um diese Funktion nutzen zu können!"
+        if "content" in interaction.data['values']:
+            message = interaction.message
+            modal = content(label="Inhalt", placeholder="Inhalt hier...", value=message.content,
+                            title="Neues Embed: Inhalt")
+            return await interaction.response.send_modal(modal)
+        elif "author" in interaction.data['values']:
+            message = interaction.message
+            if not message.embeds:
+                return await interaction.response.send_message(not_embed, ephemeral=True)
+            embed = message.embeds[0]
+            if embed.author is None:
+                modal = author(label="Autor", placeholder="Autor hier...", value="", title="Neues Embed: Autor")
+            else:
+                modal = author(label="Autor", placeholder="Autor hier...", value=embed.author.name,
+                               title="Neues Embed: Autor")
+            return await interaction.response.send_modal(modal)
+
+        elif "title" in interaction.data['values']:
+            message = interaction.message
+            if not message.embeds:
+                return await interaction.response.send_message(not_embed, ephemeral=True)
+            embed = message.embeds[0]
+
+            if embed.title is None:
+                modal = title(label="Titel", placeholder="Titel hier...", value="", title="Neues Embed: Titel")
+            else:
+                modal = title(label="Titel", placeholder="Titel hier...", value=embed.title, title="Neues Embed: Titel")
+            await interaction.response.send_modal(modal)
+
+        elif "description" in interaction.data['values']:
+            message = interaction.message
+            if not message.embeds:
+                return await interaction.response.send_message(not_embed, ephemeral=True)
+            embed = message.embeds[0]
+
+            if embed.description is None:
+                modal = description(label="Beschreibung", placeholder="Beschreibung hier...", value="",
+                                    title="Neues Embed: Beschreibung")
+            else:
+                modal = description(label="Beschreibung", placeholder="Beschreibung hier...", value=embed.description,
+                                    title="Neues Embed: Beschreibung")
+            return await interaction.response.send_modal(modal)
+
+        elif "footer" in interaction.data['values']:
+            message = interaction.message
+            if not message.embeds:
+                return await interaction.response.send_message(not_embed, ephemeral=True)
+            embed = message.embeds[0]
+            if embed.footer is None:
+                modal = footer(label="Fußzeile", placeholder="Fußzeile hier...", value="", title="Neues Embed: Fußzeile")
+            else:
+                modal = footer(label="Fußzeile", placeholder="Fußzeile hier...", value=embed.footer.text,
+                               title="Neues Embed: Fußzeile")
+            return await interaction.response.send_modal(modal)
+
+        elif "color" in interaction.data['values']:
+            message = interaction.message
+            if not message.embeds:
+                return await interaction.response.send_message(not_embed, ephemeral=True)
+            embed = message.embeds[0]
+            if embed.colour is None:
+                modal = color(label="Farbe", placeholder="Farbe (HEX) hier...", value="", title="Neues Embed: Farbe")
+            else:
+                rgb = embed.colour.to_rgb()
+                hex_code = f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+                modal = color(label="Farbe", placeholder="Farbe (HEX) hier...", value=hex_code[1:],
+                              title="Neues Embed: Farbe")
+            return await interaction.response.send_modal(modal)
+
+        elif "timestamp" in interaction.data['values']:
+            message = interaction.message
+            if not message.embeds:
+                return await interaction.response.send_message(not_embed, ephemeral=True)
+            embed = message.embeds[0]
+
+            if embed.timestamp:
+                embed.timestamp = None
+            else:
+                embed.timestamp = datetime.datetime.utcnow()
+
+            embeds = []
+            if len(message.embeds) == 2:
+                embeds.append(embed)
+                embeds.append(message.embeds[1])
+            else:
+                embeds.append(embed)
+
+            return await interaction.response.edit_message(embeds=embeds)
+
+        elif "field_add" in interaction.data['values']:
+            message = interaction.message
+            if not message.embeds:
+                return await interaction.response.send_message(not_embed, ephemeral=True)
+            embed = message.embeds[0]
+            modal = field_add(self, label="Feldname", placeholder="Feldname hier...", title="Neues Embed: Feld hinzufügen")
+            return await interaction.response.send_modal(modal)
+
+        elif "field_remove" in interaction.data['values']:
+            message = interaction.message
+            if not message.embeds:
+                return await interaction.response.send_message(not_embed, ephemeral=True)
+            embed = message.embeds[0]
+            if len(embed.fields) == 1:
+                embed.fields.pop(0)
+                embeds = []
+                if len(message.embeds) == 2:
+                    embeds.append(embed)
+                    embeds.append(message.embeds[1])
+                else:
+                    embeds.append(embed)
+
+                return await interaction.response.edit_message(embeds=embeds)
+            modal = field_remove(label="Feldnummer (Zählung beginnt bei 0)", placeholder="Feldnummer hier...",
+                                 title="Neues Embed: Feld entfernen")
+            return await interaction.response.send_modal(modal)
+        elif not interaction.response.is_done():
+            view = discord.ui.View()
+            view.add_item(Dropdown())
+            message = interaction.message
+
+            if message:
+                await interaction.response.edit_message(view=view)
+            else:
+                await interaction.response.send_message(view=view)
+
+
+class EinstellungenAuswahlView(discord.ui.View):
+    def __init__(self, db, guild_id, user, bot):
+        super().__init__(timeout=60)
+        self.db = db
+        self.guild_id = guild_id
+        self.user = user
+        self.bot = bot
+        self.add_item(EinstellungenDropdown(db, guild_id, user, bot))
+        self.add_item(FertigButton(user))
+        self.add_item(AbbrechenButton(user))
+
+    async def on_timeout(self):
+        try:
+            for item in self.children:
+                item.disabled = True
+            await self.message.edit(content="⏰ Zeit abgelaufen.", view=self)
+        except:
+            pass
+
+class EinstellungenDropdown(discord.ui.Select):
+    def __init__(self, db, guild_id, user, bot):
+        self.db = db
+        self.guild_id = guild_id
+        self.user = user
+        self.bot = bot
+
+        options = [
+            discord.SelectOption(label="Support-Rolle", value="support", emoji="🛠️"),
+            discord.SelectOption(label="Transkript-Channel", value="transcript", emoji="📄"),
+            discord.SelectOption(label="Ticket-Channel", value="ticket", emoji="🎫"),
+            discord.SelectOption(label="Log-Channel", value="log", emoji="📋")
+        ]
+        super().__init__(
+            placeholder="Wähle eine Einstellung...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user != self.user:
+            return await interaction.response.send_message("Nicht dein Menü.", ephemeral=True)
+
+        value = self.values[0]
+        if value == "support":
+            button = SupportRolleButton(self.db, self.guild_id)
+        elif value == "transcript":
+            button = TranskriptChannelButton(self.db, self.guild_id)
+        elif value == "ticket":
+            button = TicketChannelButton(self.db, self.guild_id)
+        elif value == "log":
+            button = LogChannelButton(self.db, self.guild_id)
+        else:
+            return await interaction.response.send_message("Ungültige Auswahl.", ephemeral=True)
+
+        return await button.callback(interaction)
+
+class FertigButton(discord.ui.Button):
+    def __init__(self, user):
+        super().__init__(label="Fertig", style=discord.ButtonStyle.green, row=1)
+        self.user = user
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user != self.user:
+            return await interaction.response.send_message("Nur der ursprüngliche Benutzer kann das abschließen.", ephemeral=True)
+
+        return await interaction.response.edit_message(content="✅ Einstellungen abgeschlossen.", view=None)
+
+
+class SupportRolleButton(discord.ui.Button):
+    def __init__(self, db, guild_id):
+        super().__init__(
+            style=discord.ButtonStyle.primary,
+            label="Support-Rolle",
+            custom_id=f"settings_support_{guild_id}",
+            row=0
+        )
+        self.db = db
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        class RoleSelect(discord.ui.Select):
+            def __init__(self, db, guild_id, user, roles):
+                self.db = db
+                self.guild_id = guild_id
+                self.user = user
+                options = [
+                    discord.SelectOption(label=role.name, value=str(role.id))
+                    for role in roles if not role.is_default()
+                ][:25]
+                super().__init__(
+                    placeholder="Wähle eine Support-Rolle",
+                    options=options,
+                    min_values=1,
+                    max_values=1
+                )
+
+            async def callback(self, select_interaction: discord.Interaction):
+                if select_interaction.user != self.user:
+                    return await select_interaction.response.send_message(
+                        "Nur der ursprüngliche Benutzer kann diese Auswahl treffen.",
+                        ephemeral=True
+                    )
+
+                role_id = int(self.values[0])
+                current = self.db.get_einstellungen(self.guild_id)
+                self.db.update_einstellungen(
+                    self.guild_id,
+                    role_id,
+                    current[2],
+                    current[3],
+                    current[4]
+                )
+
+                return await select_interaction.response.edit_message(
+                    content=f"✅ Support-Rolle wurde auf <@&{role_id}> gesetzt.",
+                    view=None
+                )
+
+        view = discord.ui.View(timeout=60)
+        view.add_item(RoleSelect(self.db, self.guild_id, interaction.user, interaction.guild.roles))
+        await interaction.followup.send("Wähle eine Support-Rolle aus:", view=view, ephemeral=True)
+
+
+class TranskriptChannelButton(discord.ui.Button):
+    def __init__(self, db, guild_id):
+        super().__init__(
+            style=discord.ButtonStyle.primary,
+            label="Transkript-Channel",
+            custom_id=f"settings_transcript_{guild_id}",
+            row=0
+        )
+        self.db = db
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        class TranscriptSelect(discord.ui.Select):
+            def __init__(self, db, guild_id, user, channels):
+                self.db = db
+                self.guild_id = guild_id
+                self.user = user
+                options = [
+                    discord.SelectOption(label=channel.name, value=str(channel.id))
+                    for channel in channels
+                ][:25]
+                super().__init__(
+                    placeholder="Wähle einen Transkript-Channel",
+                    options=options,
+                    min_values=1,
+                    max_values=1
+                )
+
+            async def callback(self, select_interaction: discord.Interaction):
+                if select_interaction.user != self.user:
+                    return await select_interaction.response.send_message(
+                        "Nur der ursprüngliche Benutzer kann diese Auswahl treffen.",
+                        ephemeral=True
+                    )
+
+                channel_id = int(self.values[0])
+                current = self.db.get_einstellungen(self.guild_id)
+                self.db.update_einstellungen(
+                    self.guild_id,
+                    current[1],
+                    channel_id,
+                    current[3],
+                    current[4]
+                )
+
+                return await select_interaction.response.edit_message(
+                    content=f"✅ Transkript-Channel wurde auf <#{channel_id}> gesetzt.",
+                    view=None
+                )
+
+        view = discord.ui.View(timeout=60)
+        view.add_item(TranscriptSelect(self.db, self.guild_id, interaction.user, interaction.guild.text_channels))
+        await interaction.followup.send("Wähle einen Transkript-Channel aus:", view=view, ephemeral=True)
+
+
+
+class TicketChannelButton(discord.ui.Button):
+    def __init__(self, db, guild_id):
+        super().__init__(
+            style=discord.ButtonStyle.primary,
+            label="Ticket-Channel",
+            custom_id=f"settings_ticket_{guild_id}",
+            row=1
+        )
+        self.db = db
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        class TicketSelect(discord.ui.Select):
+            def __init__(self, db, guild_id, user, channels):
+                self.db = db
+                self.guild_id = guild_id
+                self.user = user
+                options = [
+                    discord.SelectOption(label=channel.name, value=str(channel.id))
+                    for channel in channels
+                ][:25]
+                super().__init__(
+                    placeholder="Wähle einen Ticket-Channel",
+                    options=options,
+                    min_values=1,
+                    max_values=1
+                )
+
+            async def callback(self, select_interaction: discord.Interaction):
+                if select_interaction.user != self.user:
+                    return await select_interaction.response.send_message(
+                        "Nur der ursprüngliche Benutzer kann diese Auswahl treffen.",
+                        ephemeral=True
+                    )
+
+                channel_id = int(self.values[0])
+                current = self.db.get_einstellungen(self.guild_id)
+                self.db.update_einstellungen(
+                    self.guild_id,
+                    current[1],
+                    current[2],
+                    channel_id,
+                    current[4]
+                )
+
+                return await select_interaction.response.edit_message(
+                    content=f"✅ Ticket-Channel wurde auf <#{channel_id}> gesetzt.",
+                    view=None
+                )
+
+        view = discord.ui.View(timeout=60)
+        view.add_item(TicketSelect(self.db, self.guild_id, interaction.user, interaction.guild.text_channels))
+        await interaction.followup.send("Wähle einen Ticket-Channel aus:", view=view, ephemeral=True)
+
+
+
+class LogChannelButton(discord.ui.Button):
+    def __init__(self, db, guild_id):
+        super().__init__(
+            style=discord.ButtonStyle.primary,
+            label="Log-Channel",
+            custom_id=f"settings_log_{guild_id}",
+            row=1
+        )
+        self.db = db
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        class ChannelSelect(discord.ui.Select):
+            def __init__(self, db, guild_id, user, channels):
+                self.db = db
+                self.guild_id = guild_id
+                self.user = user
+
+                options = [
+                    discord.SelectOption(label=channel.name, value=str(channel.id))
+                    for channel in channels
+                ][:25]
+
+                super().__init__(
+                    placeholder="Wähle einen Log-Channel",
+                    options=options,
+                    min_values=1,
+                    max_values=1
+                )
+
+            async def callback(self, select_interaction: discord.Interaction):
+                if select_interaction.user != self.user:
+                    return await select_interaction.response.send_message(
+                        "Nur der ursprüngliche Benutzer kann diese Auswahl treffen.",
+                        ephemeral=True
+                    )
+
+                channel_id = int(self.values[0])
+                current = self.db.get_einstellungen(self.guild_id)
+                self.db.update_einstellungen(
+                    self.guild_id,
+                    current[1],  # support role
+                    current[2],  # transcript channel
+                    current[3],  # ticket channel
+                    channel_id
+                )
+
+                return await select_interaction.response.edit_message(
+                    content=f"✅ Log-Channel wurde auf <#{channel_id}> gesetzt.",
+                    view=None
+                )
+
+        view = discord.ui.View(timeout=60)
+        view.add_item(ChannelSelect(self.db, self.guild_id, interaction.user, interaction.guild.text_channels))
+        await interaction.followup.send("Wähle einen Log-Channel aus:", view=view, ephemeral=True)
+
+
+
+class AbbrechenButton(discord.ui.Button):
+    def __init__(self, user):
+        super().__init__(label="Abbrechen", style=discord.ButtonStyle.red, row=1)
+        self.user = user
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user != self.user:
+            return await interaction.response.send_message("Nicht dein Vorgang.", ephemeral=True)
+
+        return await interaction.response.edit_message(content="❌ Einstellungen abgebrochen.", view=None)
