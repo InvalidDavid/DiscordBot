@@ -58,7 +58,5 @@ if __name__ == "__main__":
                 print(f"[+] Geladen: {cog}")
             except Exception as e:
                 print(f"[!] Fehler beim Laden von {cog}: {e}")
-            # bot.load_extension(f"cog.{filename[:-3]}")
 
-    load_dotenv()
     bot.run(os.getenv("TOKEN"))
