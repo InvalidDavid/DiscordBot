@@ -7,12 +7,15 @@ import sqlite3
 from datetime import datetime, timezone
 
 
+DB_PATH = "Data/verifizierung.db"
+
 def get_db_connection():
-    connection = sqlite3.connect('Data/verify.db')
+    connection = sqlite3.connect(DB_PATH)
     connection.row_factory = sqlite3.Row
     return connection
 
 
+# Initialize database tables
 with get_db_connection() as db_conn:
     db_conn.execute('''CREATE TABLE IF NOT EXISTS verify(
                       guild_id INTEGER PRIMARY KEY,
@@ -191,16 +194,16 @@ class VerifyConfirmationView(discord.ui.View):
         self.embed_color = embed_color
 
     @discord.ui.button(label="Bestätigen", style=discord.ButtonStyle.green)
-    async def confirm(self, interaction: discord.Interaction):
+    async def confirm(self, button: discord.ui.Button, interaction: discord.Interaction):
         modal = VerifyTextModal(self.bot, self.channel_id, self.embed_color)
         await interaction.response.send_modal(modal)
-
+        
         for child in self.children:
             child.disabled = True
         await interaction.edit_original_response(view=self)
 
     @discord.ui.button(label="Abbrechen", style=discord.ButtonStyle.red)
-    async def cancel(self, interaction: discord.Interaction):
+    async def cancel(self, button: discord.ui.Button, interaction: discord.Interaction):
         for child in self.children:
             child.disabled = True
 
