@@ -2,6 +2,7 @@
 
 Hier findest du den Source Code zu meinem Discord Bot. Für diese Tutorialreihe benutze ich [Pycord](https://github.com/Pycord-Development/pycord).  
 Das ist eine Python-Bibliothek, die auf [discord.py](https://github.com/Rapptz/discord.py) basiert und mit der wir auf die Discord API zugreifen.
+Wenn es euch gefaellt, gib ein Star :O
 
 ## Projektbeschreibung
 Dies ist ein selbstentwickelter Discord-Bot, programmiert in Python mit dem **py-cord** Framework. Der Bot bietet simple Error Handler sowie ein durchdachtes Verifizerungs System.
