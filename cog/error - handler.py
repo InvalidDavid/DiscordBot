@@ -10,7 +10,7 @@ SUPPORT_SERVER = "kekw"
 class FehlerHandler(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
+        self._error_cache = {}
 
     @staticmethod
     async def sende_fehler_embed(ctx, titel, beschreibung, ephemeral=True):
@@ -33,7 +33,6 @@ class FehlerHandler(commands.Cog):
         absolute = discord.utils.format_dt(target_time, style='F')
 
         return f"{relative} ({absolute})" if show_absolute else relative
-
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -88,6 +87,14 @@ class FehlerHandler(commands.Cog):
 
     @commands.Cog.listener()
     async def on_application_command_error(self, ctx, error):
+        key = (ctx.user.id, getattr(ctx.command, 'name', 'unknown'), type(error))
+        now = datetime.utcnow()
+
+        if key in self._error_cache:
+            if now - self._error_cache[key] < timedelta(seconds=10):
+                return
+        self._error_cache[key] = now
+
         if isinstance(error, commands.CommandError):
             await self.on_command_error(ctx, error)
             return
@@ -105,7 +112,14 @@ class FehlerHandler(commands.Cog):
         )
         embed.set_author(name=ctx.user)
         embed.add_field(name="Error", value=f"```py\n{error}```")
-        await ctx.respond(embed=embed, ephemeral=True)
+
+        try:
+            if not ctx.response.is_done():
+                await ctx.respond(embed=embed, ephemeral=True)
+            else:
+                await ctx.followup.send(embed=embed, ephemeral=True)
+        except discord.errors.HTTPException:
+            pass
 
 
 def setup(bot):
