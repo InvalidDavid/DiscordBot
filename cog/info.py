@@ -180,7 +180,7 @@ class Info(commands.Cog):
         uptime = now - self.start_time
 
         process = psutil.Process()
-        cpu_percent = psutil.cpu_percent(interval=0.5)
+        cpu_percent = psutil.cpu_percent(interval=None)
         ram_usage_mb = process.memory_info().rss / 1024 / 1024
         python_version = platform.python_version()
         discord_py_version = discord.__version__
@@ -222,6 +222,13 @@ class Info(commands.Cog):
             inline=False
         )
         embed.add_field(
+            name="🏓 Ping",
+            value=(
+                f"```ansi\n{ansi_blue}{round(self.bot.latency * 1000):,}ms{ansi_reset}```"
+            ),
+            inline=False
+        )
+        embed.add_field(
             name="💻 CPU-Auslastung",
             value=f"```ansi\n{ansi_blue}{cpu_percent:.1f}%{ansi_reset}```",
             inline=True
@@ -253,7 +260,7 @@ class Info(commands.Cog):
         )
         embed.set_footer(text=f"Angefragt von {ctx.author}", icon_url=ctx.author.display_avatar.url)
 
-        await ctx.respond(embed=embed)
+        await ctx.followup.send(embed=embed)
 
 
 def setup(bot: commands.Bot):
