@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 
 FEHLER_SYMBOL = "❌"
-SUPPORT_SERVER = "kekw"
+SUPPORT_SERVER = "https://github.com/InvalidDavid/DiscordBot"
 
 
 class FehlerHandler(commands.Cog):
