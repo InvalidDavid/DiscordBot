@@ -4,6 +4,9 @@ from discord import Message
 from discord.utils import format_dt
 from datetime import datetime, timezone
 
+ansi_blue = "\u001b[2;34m"
+ansi_reset = "\u001b[0m"
+
 class Apps(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -29,83 +32,80 @@ class Apps(commands.Cog):
     async def userinfo(self, ctx: discord.ApplicationContext, message: Message):
         member = message.author
         now = datetime.now(timezone.utc)
-
         created_at = member.created_at
         joined_at = getattr(member, "joined_at", None)
-
-        account_age = self.time_ago(created_at)
-        join_age = self.time_ago(joined_at) if joined_at else "Nicht verfügbar"
 
         user_obj = await self.bot.fetch_user(member.id)
 
         embed = discord.Embed(
             title=f"🔎 Benutzerinfo: {member.display_name}",
-            description=f"[Profil anzeigen](https://discord.com/users/{member.id})",
             color=member.color if hasattr(member, 'color') and member.color.value else discord.Color.blurple(),
             timestamp=now
         )
         embed.set_thumbnail(url=member.display_avatar.url)
 
-        embed.add_field(name="🆔 ID", value=f"`{member.id}`", inline=True)
-        embed.add_field(name="👤 Benutzername", value=f"`{member.name}`", inline=True)
-        embed.add_field(name="🤖 Bot", value="✅ Ja" if member.bot else "❌ Nein", inline=True)
+        embed.add_field(name="🆔 ID", value=f"```ansi\n{ansi_blue}{member.id}{ansi_reset}```", inline=True)
+        embed.add_field(name="👤 Benutzername", value=f"```ansi\n{ansi_blue}{member.name}{ansi_reset}```", inline=True)
+        embed.add_field(name="🤖 Bot", value=f"```ansi\n{ansi_blue}{'Ja' if member.bot else 'Nein'}{ansi_reset}```", inline=True)
 
         embed.add_field(
             name="📅 Konto erstellt am",
-            value=f"{format_dt(created_at, 'f')} ({account_age})",
+            value=f"{format_dt(created_at, 'F')} ({format_dt(created_at, 'R')})",
             inline=False
         )
 
-        if isinstance(member, discord.Member) and joined_at:
+        if joined_at:
             embed.add_field(
                 name="📥 Server beigetreten am",
-                value=f"{format_dt(joined_at, 'f')} ({join_age})",
+                value=f"{format_dt(joined_at, 'F')} ({format_dt(joined_at, 'R')})",
                 inline=False
             )
 
-        if member.premium_since:
+        if getattr(member, "premium_since", None):
             embed.add_field(
                 name="🚀 Boostet seit",
-                value=f"{format_dt(member.premium_since, 'f')} ({self.time_ago(member.premium_since)})",
+                value=f"```ansi\n{ansi_blue}{format_dt(member.premium_since, 'F')} ({self.time_ago(member.premium_since)}){ansi_reset}```",
                 inline=True
             )
 
         if hasattr(member, "timed_out_until") and member.timed_out_until:
             embed.add_field(
                 name="⏱️ Timeout aktiv bis",
-                value=f"{format_dt(member.timed_out_until, 'f')} ({self.time_ago(member.timed_out_until)})",
+                value=f"```ansi\n{ansi_blue}{format_dt(member.timed_out_until, 'F')} ({self.time_ago(member.timed_out_until)}){ansi_reset}```",
                 inline=False
             )
 
         devices = []
-        if member.desktop_status != discord.Status.offline:
-            devices.append("💻 Desktop")
-        if member.mobile_status != discord.Status.offline:
-            devices.append("📱 Mobil")
-        if member.web_status != discord.Status.offline:
-            devices.append("🌐 Web")
+        if getattr(member, "desktop_status", None) != discord.Status.offline:
+            devices.append("💻 PC")
+        if getattr(member, "mobile_status", None) != discord.Status.offline:
+            devices.append("📱 Handy")
+        if getattr(member, "web_status", None) != discord.Status.offline:
+            devices.append("🌐 Website")
 
-        if devices:
-            embed.add_field(name="🖥️ Online auf", value=", ".join(devices), inline=True)
+        if devices and not member.bot:
+            embed.add_field(name="🖥️ Online auf", value=f"```ansi\n{ansi_blue}{', '.join(devices)}{ansi_reset}```", inline=True)
 
-        embed.add_field(name="📶 Status", value=str(member.status).capitalize(), inline=True)
+        embed.add_field(name="📶 Status", value=f"```ansi\n{ansi_blue}{str(member.status).capitalize()}{ansi_reset}```", inline=True)
 
         if member.activities:
-            aktivitätsliste = []
-            for act in member.activities:
-                if act.name:
-                    aktivitätsliste.append(f"{act.name}")
-            embed.add_field(name="🎮 Aktivität(en)", value=", ".join(aktivitätsliste), inline=False)
+            aktivitaetsliste = [act.name for act in member.activities if act.name]
+            if aktivitaetsliste:
+                embed.add_field(name="🎮 Aktivität(en)",
+                                value=f"```ansi\n{ansi_blue}{', '.join(aktivitaetsliste)}{ansi_reset}```",
+                                inline=False)
 
         if user_obj.accent_color:
-            embed.add_field(name="🎨 Profilfarbe", value=f"`#{user_obj.accent_color.value:06X}`", inline=True)
+            embed.add_field(name="🎨 Profilfarbe",
+                            value=f"```ansi\n{ansi_blue}#{user_obj.accent_color.value:06X}{ansi_reset}```",
+                            inline=True)
 
         if user_obj.banner:
             embed.set_image(url=user_obj.banner.url)
 
         embed.set_footer(icon_url=ctx.author.display_avatar.url)
-
         await ctx.respond(embed=embed, ephemeral=True)
+
 
 def setup(bot: commands.Bot):
     bot.add_cog(Apps(bot))
