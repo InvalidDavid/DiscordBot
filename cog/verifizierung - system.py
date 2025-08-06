@@ -15,7 +15,6 @@ def get_db_connection():
     return connection
 
 
-# Initialize database tables
 with get_db_connection() as db_conn:
     db_conn.execute('''CREATE TABLE IF NOT EXISTS verify(
                       guild_id INTEGER PRIMARY KEY,
