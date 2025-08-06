@@ -1,90 +1,111 @@
 import discord
 from discord.ext import commands
-from datetime import datetime, timezone  # Import timezone
+from discord import Message
+from discord.utils import format_dt
+from datetime import datetime, timezone
 
-class UserInfo(commands.Cog):
-    def __init__(self, bot):
+class Apps(commands.Cog):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    def time_ago(self, dt: datetime) -> str:
+        delta = datetime.now(timezone.utc) - dt
+        seconds = int(delta.total_seconds())
 
+        if seconds < 60:
+            return f"vor {seconds} Sekunden"
+        elif seconds < 3600:
+            return f"vor {seconds // 60} Minuten"
+        elif seconds < 86400:
+            return f"vor {seconds // 3600} Stunden"
+        elif seconds < 2592000:
+            return f"vor {seconds // 86400} Tagen"
+        elif seconds < 31536000:
+            return f"vor {seconds // 2592000} Monaten"
+        else:
+            return f"vor {seconds // 31536000} Jahren"
 
-
-### PROTOTYP
-
-
-
-    @commands.message_command(name="User Info")
-    async def userinfo(self, ctx: discord.ApplicationContext, message: discord.Message):
+    @commands.message_command(name="Benutzerinfo")
+    async def userinfo(self, ctx: discord.ApplicationContext, message: Message):
         member = message.author
+        now = datetime.now(timezone.utc)
 
-        now = datetime.now(timezone.utc) 
+        created_at = member.created_at
+        joined_at = getattr(member, "joined_at", None)
 
-        account_age = (now - member.created_at).days
-        server_join_age = (
-            (now - member.joined_at).days
-            if isinstance(member, discord.Member) and member.joined_at
-            else "N/A"
-        )
+        account_age = self.time_ago(created_at)
+        join_age = self.time_ago(joined_at) if joined_at else "Nicht verfügbar"
 
-        roles = [role.mention for role in member.roles[1:]] if hasattr(member, 'roles') else []
-        highest_role = member.top_role.mention if hasattr(member, 'top_role') and member.top_role != ctx.guild.default_role else "None"
-        is_bot = "✅" if member.bot else "❌"
-        is_system = "✅" if getattr(member, 'system', False) else "❌"
-        status = str(getattr(member, 'status', 'N/A')).title()
-        activity = (
-            f"{member.activity.type.name.title()} {member.activity.name}"
-            if hasattr(member, 'activity') and member.activity
-            else "None"
-        )
-        permissions = []
-        if isinstance(member, discord.Member):
-            permissions = [perm for perm, value in member.guild_permissions if value]
+        user_obj = await self.bot.fetch_user(member.id)
 
         embed = discord.Embed(
-            title=f"User Info: {member.display_name}",
-            color=member.color if hasattr(member, 'color') and member.color != discord.Color.default() else discord.Color.blurple(),
-            timestamp=now  
+            title=f"🔎 Benutzerinfo: {member.display_name}",
+            description=f"[Profil anzeigen](https://discord.com/users/{member.id})",
+            color=member.color if hasattr(member, 'color') and member.color.value else discord.Color.blurple(),
+            timestamp=now
         )
         embed.set_thumbnail(url=member.display_avatar.url)
 
-        embed.add_field(name="🆔 **ID**", value=f"`{member.id}`", inline=True)
-        embed.add_field(name="📛 **Username**", value=f"`{member.name}`", inline=True)
-        embed.add_field(name="#️⃣ **Discriminator**", value=f"`{member.discriminator}`", inline=True)
-        embed.add_field(name="🤖 **Bot**", value=is_bot, inline=True)
-        embed.add_field(name="⚙️ **System User**", value=is_system, inline=True)
+        embed.add_field(name="🆔 ID", value=f"`{member.id}`", inline=True)
+        embed.add_field(name="👤 Benutzername", value=f"`{member.name}`", inline=True)
+        embed.add_field(name="🤖 Bot", value="✅ Ja" if member.bot else "❌ Nein", inline=True)
+
         embed.add_field(
-            name="📅 **Account Created**",
-            value=f"{discord.utils.format_dt(member.created_at, 'f')}\n({account_age} days ago)",
+            name="📅 Konto erstellt am",
+            value=f"{format_dt(created_at, 'f')} ({account_age})",
             inline=False
         )
 
-        if isinstance(member, discord.Member):
+        if isinstance(member, discord.Member) and joined_at:
             embed.add_field(
-                name="📅 **Joined Server**",
-                value=f"{discord.utils.format_dt(member.joined_at, 'f')}\n({server_join_age} days ago)",
-                inline=False
-            )
-            embed.add_field(name="👑 **Highest Role**", value=highest_role, inline=True)
-            embed.add_field(
-                name=f"🎭 **Roles ({len(roles)})**",
-                value=" ".join(roles) if roles else "None",
-                inline=False
-            )
-            embed.add_field(
-                name="🛡️ **Key Permissions**",
-                value=", ".join(permissions[:10]) if permissions else "None",
+                name="📥 Server beigetreten am",
+                value=f"{format_dt(joined_at, 'f')} ({join_age})",
                 inline=False
             )
 
-        embed.add_field(name="🟢 **Status**", value=status, inline=True)
-        embed.add_field(name="🎮 **Activity**", value=activity, inline=True)
+        if member.premium_since:
+            embed.add_field(
+                name="🚀 Boostet seit",
+                value=f"{format_dt(member.premium_since, 'f')} ({self.time_ago(member.premium_since)})",
+                inline=True
+            )
 
-        embed.set_footer(
-            text=f"Requested by {ctx.author}",
-            icon_url=ctx.author.display_avatar.url
-        )
+        if hasattr(member, "timed_out_until") and member.timed_out_until:
+            embed.add_field(
+                name="⏱️ Timeout aktiv bis",
+                value=f"{format_dt(member.timed_out_until, 'f')} ({self.time_ago(member.timed_out_until)})",
+                inline=False
+            )
+
+        devices = []
+        if member.desktop_status != discord.Status.offline:
+            devices.append("💻 Desktop")
+        if member.mobile_status != discord.Status.offline:
+            devices.append("📱 Mobil")
+        if member.web_status != discord.Status.offline:
+            devices.append("🌐 Web")
+
+        if devices:
+            embed.add_field(name="🖥️ Online auf", value=", ".join(devices), inline=True)
+
+        embed.add_field(name="📶 Status", value=str(member.status).capitalize(), inline=True)
+
+        if member.activities:
+            aktivitätsliste = []
+            for act in member.activities:
+                if act.name:
+                    aktivitätsliste.append(f"{act.name}")
+            embed.add_field(name="🎮 Aktivität(en)", value=", ".join(aktivitätsliste), inline=False)
+
+        if user_obj.accent_color:
+            embed.add_field(name="🎨 Profilfarbe", value=f"`#{user_obj.accent_color.value:06X}`", inline=True)
+
+        if user_obj.banner:
+            embed.set_image(url=user_obj.banner.url)
+
+        embed.set_footer(icon_url=ctx.author.display_avatar.url)
 
         await ctx.respond(embed=embed, ephemeral=True)
 
-def setup(bot):
-    bot.add_cog(UserInfo(bot))
+def setup(bot: commands.Bot):
+    bot.add_cog(Apps(bot))
