@@ -1,2 +1,6 @@
 py-cord
 python-dotenv
+requests
+aiosqlite
+psutil
+easy-pil
