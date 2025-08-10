@@ -5,6 +5,7 @@ from discord.commands import SlashCommandGroup
 from datetime import datetime, timezone, timedelta
 import psutil
 import platform
+import time
 
 ansi_blue = "\u001b[2;34m"
 ansi_reset = "\u001b[0m"
@@ -40,7 +41,6 @@ class Info(commands.Cog):
             return f"vor {seconds // 2592000} Monaten"
         else:
             return f"vor {seconds // 31536000} Jahren"
-
 
     info = SlashCommandGroup("info", "Informationen")
 
@@ -127,7 +127,6 @@ class Info(commands.Cog):
         except Exception as e:
             await ctx.respond(f"Fehler beim Abrufen der Benutzerinfo: {e}", ephemeral=True)
 
-
     @info.command(description="Stats zum Server.")
     async def server(self, ctx: discord.ApplicationContext):
         try:
@@ -187,7 +186,8 @@ class Info(commands.Cog):
     @info.command(name="bot", description="Detaillierte Informationen über den Bot.")
     async def bot_info(self, ctx: discord.ApplicationContext):
         try:
-            await ctx.defer()
+            await ctx.defer()  # Defert die Antwort, erlaubt Zeit für längere Verarbeitung
+
             now = datetime.now(timezone.utc)
             uptime = now - self.start_time
 
@@ -196,12 +196,23 @@ class Info(commands.Cog):
             ram_usage_mb = process.memory_info().rss / 1024 / 1024
             python_version = platform.python_version()
             discord_py_version = discord.__version__
+            system_info = f"{platform.system()} {platform.release()}"
 
             guild_count = len(self.bot.guilds)
             user_count = len(set(self.bot.get_all_members()))
 
             created_at = self.bot.user.created_at if self.bot.user else None
             created_str = "Nicht verfügbar" if not created_at else f"{format_dt(created_at, 'F')} ({format_dt(created_at, 'R')})"
+
+            ws_ping = round(self.bot.latency * 1000, 2)
+
+            start = time.perf_counter()
+            try:
+                await self.bot.http.request(discord.http.Route("GET", "/gateway"))
+                api_ping = round((time.perf_counter() - start) * 1000, 2)
+            except Exception:
+                api_ping = None
+            api_ping = round((time.perf_counter() - start) * 1000, 2)
 
             embed = discord.Embed(
                 title="🤖 Bot-Informationen",
@@ -210,69 +221,37 @@ class Info(commands.Cog):
                 timestamp=now
             )
 
-            embed.add_field(
-                name="🆔 Bot ID",
-                value=f"```ansi\n{ansi_blue}{self.bot.user.id if self.bot.user else 'N/A'}{ansi_reset}```",
-                inline=True
-            )
-            embed.add_field(
-                name="📛 Bot Name",
-                value=f"```ansi\n{ansi_blue}{self.bot.user}{ansi_reset}```",
-                inline=True
-            )
-            embed.add_field(
-                name="📅 Bot erstellt am",
-                value=f"{created_str}",
-                inline=False
-            )
-            embed.add_field(
-                name="🕰️ Bot Uptime",
-                value=(
-                    f"```ansi\n{ansi_blue}{self.format_timedelta(uptime)}{ansi_reset}```"
-                    f"Letzter Neustart: {format_dt(self.start_time, 'F')} ({format_dt(self.start_time, 'R')})"
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name="🏓 Ping",
-                value=(
-                    f"```ansi\n{ansi_blue}{round(self.bot.latency * 1000):,}ms{ansi_reset}```"
-                ),
-                inline=False
-            )
-            embed.add_field(
-                name="💻 CPU-Auslastung",
-                value=f"```ansi\n{ansi_blue}{cpu_percent:.1f}%{ansi_reset}```",
-                inline=True
-            )
-            embed.add_field(
-                name="🧠 RAM-Verbrauch",
-                value=f"```ansi\n{ansi_blue}{ram_usage_mb:.2f} MB{ansi_reset}```",
-                inline=True
-            )
-            embed.add_field(
-                name="🐍 Python Version",
-                value=f"```ansi\n{ansi_blue}{python_version}{ansi_reset}```",
-                inline=True
-            )
-            embed.add_field(
-                name="📦 Py-cord Version",
-                value=f"```ansi\n{ansi_blue}{discord_py_version}{ansi_reset}```",
-                inline=True
-            )
-            embed.add_field(
-                name="👥 Server",
-                value=f"```ansi\n{ansi_blue}{guild_count}{ansi_reset}```",
-                inline=True
-            )
-            embed.add_field(
-                name="👤 Benutzer (gesamt)",
-                value=f"```ansi\n{ansi_blue}{user_count}{ansi_reset}```",
-                inline=True
-            )
-            embed.set_footer(text=f"Angefragt von {ctx.author}", icon_url=ctx.author.display_avatar.url)
+            embed.add_field(name="🆔 Bot ID",
+                            value=f"```ansi\n{ansi_blue}{self.bot.user.id if self.bot.user else 'N/A'}{ansi_reset}```",
+                            inline=True)
+            embed.add_field(name="📛 Bot Name", value=f"```ansi\n{ansi_blue}{self.bot.user}{ansi_reset}```", inline=True)
+            embed.add_field(name="📅 Bot erstellt am", value=f"{created_str}", inline=False)
+            embed.add_field(name="🕰️ Bot Uptime",
+                            value=(f"```ansi\n{ansi_blue}{self.format_timedelta(uptime)}{ansi_reset}```"
+                                   f"Letzter Neustart: {format_dt(self.start_time, 'F')} ({format_dt(self.start_time, 'R')})"),
+                            inline=False)
 
-            await ctx.followup.send(embed=embed)
+            embed.add_field(name="🏓 WebSocket Ping", value=f"```ansi\n{ansi_blue}{ws_ping} ms{ansi_reset}```",
+                            inline=True)
+            embed.add_field(name="📡 API Ping",
+                            value=f"```ansi\n{ansi_blue}{api_ping if api_ping is not None else 'Fehler'} ms{ansi_reset}```",
+                            inline=True)
+            embed.add_field(name="🖥️ Plattform", value=f"```ansi\n{ansi_blue}{system_info}{ansi_reset}```", inline=True)
+
+            embed.add_field(name="💻 CPU-Auslastung", value=f"```ansi\n{ansi_blue}{cpu_percent:.1f}%{ansi_reset}```",
+                            inline=True)
+            embed.add_field(name="🧠 RAM-Verbrauch", value=f"```ansi\n{ansi_blue}{ram_usage_mb:.2f} MB{ansi_reset}```",
+                            inline=True)
+            embed.add_field(name="🐍 Python Version", value=f"```ansi\n{ansi_blue}{python_version}{ansi_reset}```",
+                            inline=True)
+            embed.add_field(name="📦 Py-cord Version", value=f"```ansi\n{ansi_blue}{discord_py_version}{ansi_reset}```",
+                            inline=True)
+            embed.add_field(name="👥 Server", value=f"```ansi\n{ansi_blue}{guild_count}{ansi_reset}```", inline=True)
+            embed.add_field(name="👤 Benutzer (gesamt)", value=f"```ansi\n{ansi_blue}{user_count}{ansi_reset}```",
+                            inline=True)
+
+            embed.set_footer(text=f"Angefragt von {ctx.author}", icon_url=ctx.author.display_avatar.url)
+            await ctx.respond(embed=embed)
         except Exception as e:
             await ctx.respond(f"Fehler beim Abrufen der Botinformationen: {e}", ephemeral=True)
 
