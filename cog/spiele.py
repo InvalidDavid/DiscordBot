@@ -235,9 +235,15 @@ class TicTacToeView(discord.ui.View):
                 return
 
             view.current = view.p2 if view.current == view.p1 else view.p1
-            embed = view.create_embed(
+            embed = discord.Embed(
                 title=f"TicTacToe {view.size}x{view.size}",
-                description=f"Du bist dran: {view.current.mention}"
+                description=f"Du bist dran: {view.current.mention}",
+                color=discord.Color.blurple()
+            )
+            embed.add_field(
+                name="Spieler",
+                value=f"❌ {view.p1.mention}\n◯️ {view.p2.mention}",
+                inline=False
             )
             await interaction.response.edit_message(content=None, embed=embed, view=view)
 
@@ -355,7 +361,7 @@ class TicTacToeView(discord.ui.View):
             embed = discord.Embed(
                 title="🎉 Spielende!",
                 description=f"{self.winner.mention} gewinnt!",
-                color=0x00ff00
+                color=discord.Color.green()
             )
             await self.message.edit(embed=embed, view=self)
 
@@ -373,7 +379,7 @@ class TicTacToeView(discord.ui.View):
             embed = discord.Embed(
                 title="😐 Unentschieden!",
                 description="Das Spielfeld ist voll!",
-                color=0xffff00
+                color=discord.Color.gold()
             )
             await self.message.edit(embed=embed, view=self)
 
@@ -388,8 +394,14 @@ class TicTacToeView(discord.ui.View):
             embed = discord.Embed(
                 title=f"TicTacToe {self.size}x{self.size}",
                 description=f"Du bist dran: {self.current.mention}",
-                color=0x0000ff
+                color=discord.Color.blurple()
             )
+            embed.add_field(
+                name="Spieler",
+                value=f"❌ {self.p1.mention}\n◯️ {self.p2.mention}",
+                inline=False
+            )
+
             await self.message.edit(embed=embed, view=self)
 
     def check_winner(self, mark):
@@ -419,13 +431,18 @@ class TicTacToeView(discord.ui.View):
         return False
 
     def create_embed(self, title: str, description: str) -> discord.Embed:
+        color = discord.Color.blurple()
+        if "gewinnen" in title.lower():
+            color = discord.Color.green()
+        elif "unentschieden" in title.lower():
+            color = discord.Color.gold()
+        elif "abgelaufen" in title.lower():
+            color = discord.Color.red()
+
         embed = discord.Embed(
             title=title,
-            description=f"{description}\n\n"
-                        f"**Spieler:**\n"
-                        f"❌ {self.p1.mention}\n"
-                        f"◯️ {self.p2.mention}",
-            color=discord.Color.blurple()
+            description=f"{description}\n\n",
+            color=color
         )
         return embed
 
@@ -489,12 +506,15 @@ class Spiele(commands.Cog):
 
         if opponent == self.bot.user:
             start_embed = discord.Embed(
-                title="🎮 TicTacToe",
-                description=f"{ctx.author.mention} vs. {opponent.mention} (Bot)!\n",
+                title=f"TicTacToe {size}x{size}",
+                description=f"Du bist dran: {ctx.author.mention}",
                 color=discord.Color.blurple()
             )
-            start_embed.add_field(name="Status", value=f"{ctx.author.mention} beginnt!", inline=False)
-            start_embed.add_field(name="Spieler:", value=f"❌ {ctx.author.mention}\n◯️ {opponent.mention}", inline=False)
+            start_embed.add_field(
+                name="Spieler",
+                value=f"❌ {ctx.author.mention}\n◯️ {opponent.mention}",
+                inline=False
+            )
 
             game_view = TicTacToeView(ctx.author, opponent, bot_user=self.bot.user, size=size, win_length=win_length)
             await ctx.respond(embed=start_embed, view=game_view)
@@ -514,11 +534,10 @@ class Spiele(commands.Cog):
             return
 
         start_embed = discord.Embed(
-            title="🎮 TicTacToe",
-            description=f"{ctx.author.mention} vs. {opponent.mention}!\n",
+            title="TicTacToe {size}x{size}",
+            description=f"Du bist dran: {ctx.author.mention}",
             color=discord.Color.blurple()
         )
-        start_embed.add_field(name="Status", value=f"{ctx.author.mention} beginnt!", inline=False)
         start_embed.add_field(name="Spieler:", value=f"❌ {ctx.author.mention}\n◯️ {opponent.mention}", inline=False)
 
         game_message = await ctx.interaction.original_response()
