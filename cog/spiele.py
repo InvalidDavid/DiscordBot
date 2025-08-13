@@ -207,9 +207,10 @@ class TicTacToeView(discord.ui.View):
                 for child in view.children:
                     child.disabled = True
 
-                embed = view.create_embed(
+                embed = discord.Embed(
                     title="🎉 Spielende!",
-                    description=f"{view.winner.mention} gewinnt!"
+                    description=f"{view.winner.mention} gewinnt!",
+                    color=discord.Color.green()
                 )
                 await interaction.response.edit_message(content=None, embed=embed, view=view)
                 if view.p1 != view.bot_user and view.p2 != view.bot_user:
@@ -223,9 +224,10 @@ class TicTacToeView(discord.ui.View):
             if all(s != " " for s in view.board):
                 for child in view.children:
                     child.disabled = True
-                embed = view.create_embed(
+                embed = discord.Embed(
                     title="😐 Unentschieden!",
-                    description="Das Spielfeld ist voll!"
+                    description="Das Spielfeld ist voll!",
+                    color=discord.Color.gold()
                 )
                 await interaction.response.edit_message(content=None, embed=embed, view=view)
                 if view.p1 != view.bot_user and view.p2 != view.bot_user:
